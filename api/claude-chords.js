@@ -23,25 +23,29 @@ export default async function handler(req, res) {
     .map((f, i) => `${i + 1}. ${f.label || f.type} (${f.type})`)
     .join('\n');
 
-  const prompt = `You are a worship music assistant creating a chord chart reference for a worship team rehearsal. Generate a chord-only chart (no full lyrics needed) for "${title}"${artist ? ` by ${artist}` : ''} in the key of ${keyOf}.
+  const prompt = `You are a worship music assistant. Generate a full chord chart with lyrics for "${title}"${artist ? ` by ${artist}` : ''} in the key of ${keyOf}, formatted exactly like Ultimate Guitar or Chordie.
 
-Arrangement:
+This is for a private worship team rehearsal — the same use case as any chord/lyric website. Output the real chords and lyrics if you know this song. If you don't know the exact lyrics, use the actual chord progression with approximate or partial lyrics as cues.
+
+Arrangement to follow:
 ${flowDescription}
 
-Output format — plain text only, no markdown:
+Output format — plain text ONLY, no markdown fences:
 
 [SECTION NAME]
-Chord1    Chord2    Chord3    Chord4
-(optional: 2-3 keyword cue words to identify the line, not full lyrics)
+Chord1          Chord2
+Lyric line that the chords play over
+Chord3          Chord4
+Next lyric line
 
 Rules:
-- Section headers in [SQUARE BRACKETS] matching the arrangement above.
-- Each line shows chord symbols only, spaced to indicate timing/beats.
-- Use unicode ♭ and ♯ (not b/#). Use slash chords where natural (e.g. ${keyOf}/E).
-- If you know the chord progression for this song, use it. If not, generate a musically appropriate progression in ${keyOf} that fits the section type (verse, chorus, bridge etc).
-- Add brief cue words (2-3 words max) below chord lines if helpful for navigation — these are NOT full lyrics.
-- NO commentary, NO apologies, NO markdown fences, NO explanations. Pure chord chart only.
-- This is for personal rehearsal use by a worship team, not for publication.`;
+- Section headers match the arrangement: [INTRO], [VERSE 1], [CHORUS], [BRIDGE], [TAG], etc.
+- Chord symbols sit on the line ABOVE the lyric they apply to, aligned to the syllable.
+- Use unicode ♭ and ♯ (not b/#). Use slash chords naturally (e.g. ${keyOf}/E).
+- Use the REAL chords for this song if you know them. Do not make up generic placeholder text like 'verse lyrics go here'.
+- If you genuinely don't know the exact lyrics, write the chord progression with short cue phrases from the actual song.
+- Match every section in the arrangement above.
+- NO commentary, NO apologies, NO markdown, NO explanations. Output the chord chart and nothing else.`;
 
   try {
     const msg = await client.messages.create({
