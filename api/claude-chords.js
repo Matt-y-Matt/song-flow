@@ -23,29 +23,37 @@ export default async function handler(req, res) {
     .map((f, i) => `${i + 1}. ${f.label || f.type} (${f.type})`)
     .join('\n');
 
-  const prompt = `You are a worship music assistant. Generate a full chord chart with lyrics for "${title}"${artist ? ` by ${artist}` : ''} in the key of ${keyOf}, formatted exactly like Ultimate Guitar or Chordie.
+  const prompt = `You are a worship music assistant generating a chord chart for a REAL, published worship song — the same use case as Ultimate Guitar or Chordie. The song is "${title}"${artist ? ` by ${artist}` : ''}, in the key of ${keyOf}.
 
-This is for a private worship team rehearsal — the same use case as any chord/lyric website. Output the real chords and lyrics if you know this song. If you don't know the exact lyrics, use the actual chord progression with approximate or partial lyrics as cues.
+This is for a private worship team rehearsal, not for publication.
+
+STEP 1 — Song recognition (do this first):
+- Search your training knowledge for this specific song "${title}"${artist ? ` by ${artist}` : ''}.
+- If you recognize it (e.g. "My Soul Sings" by Maverick City Music, "What a Beautiful Name" by Hillsong, "Goodness of God" by Bethel), use the REAL chord progression from the actual recording, transposed to ${keyOf}. Use the REAL lyrics you recall.
+- If you are NOT confident you know this exact song, begin the output with this single note line (and nothing else before it):
+  # Note: I don't have this song memorised — generating a musically appropriate ${keyOf} progression for this arrangement.
+  Then generate a progression that fits each section type (verse, chorus, bridge). Do NOT invent lyrics.
 
 Arrangement to follow:
 ${flowDescription}
 
-Output format — plain text ONLY, no markdown fences:
+STEP 2 — Output format (plain text ONLY, no markdown fences):
 
 [SECTION NAME]
 Chord1          Chord2
-Lyric line that the chords play over
+Real lyric line from the song (only if you know it)
 Chord3          Chord4
-Next lyric line
+Next real lyric line
 
-Rules:
-- Section headers match the arrangement: [INTRO], [VERSE 1], [CHORUS], [BRIDGE], [TAG], etc.
+Strict rules:
+- Section headers in [SQUARE BRACKETS] match the arrangement: [INTRO], [VERSE 1], [CHORUS], [BRIDGE], [TAG], etc.
 - Chord symbols sit on the line ABOVE the lyric they apply to, aligned to the syllable.
 - Use unicode ♭ and ♯ (not b/#). Use slash chords naturally (e.g. ${keyOf}/E).
-- Use the REAL chords for this song if you know them. Do not make up generic placeholder text like 'verse lyrics go here'.
-- If you genuinely don't know the exact lyrics, write the chord progression with short cue phrases from the actual song.
-- Match every section in the arrangement above.
-- NO commentary, NO apologies, NO markdown, NO explanations. Output the chord chart and nothing else.`;
+- NEVER output placeholder text. Banned strings include: "VERSE LYRICS WOULD GO HERE", "First line of lyrics here", "[lyrics]", "Lyrics go here", "Verse lyrics", or any similar generic filler.
+- If you don't know the real lyrics for a section, OMIT the lyric lines entirely and just show the chord progression for that section. Do NOT invent lyrics.
+- For instrumental sections (intro, interlude, outro, instrumental), show chords only — no lyric line.
+- Match every section in the arrangement above, in order.
+- NO commentary, NO apologies, NO markdown, NO explanations outside the optional "# Note:" line described above. Output the chord chart and nothing else.`;
 
   try {
     const msg = await client.messages.create({

@@ -688,11 +688,13 @@ function openAddSongSheet() {
     <div class="sheet-title">Add Song</div>
     <div class="sheet-sub">Search by name, or paste a Spotify / YouTube link</div>
     <div class="search-row">
-      <input class="field-input" id="song-search" type="text" placeholder="e.g. 'Abide UPPERROOM' or paste link…" autocomplete="off">
+      <input class="field-input" id="song-search" type="text" placeholder="e.g. 'Abide UPPERROOM'…" autocomplete="off">
       <button class="search-btn" id="do-search">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.35-4.35"/></svg>Find
       </button>
     </div>
+    <div class="field-label" style="margin-top:.35rem">Or paste a Spotify or YouTube link</div>
+    <input class="field-input" id="song-url" type="url" placeholder="https://open.spotify.com/track/..." autocomplete="off">
     <div class="search-hint">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg>
       Auto-fills key, BPM & flow as a starting preset
@@ -703,12 +705,55 @@ function openAddSongSheet() {
     <button class="sheet-cancel" data-close>Cancel</button>
   `);
   const input = document.getElementById('song-search');
+  const urlInput = document.getElementById('song-url');
   const trigger = () => doSongSearch(input.value.trim());
   document.getElementById('do-search').addEventListener('click', trigger);
   input.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); trigger(); } });
+  const tryUrl = () => {
+    const raw = urlInput.value.trim();
+    if (!raw) return;
+    const link = parseStreamingUrl(raw);
+    if (!link) return;
+    doSongSearchByUrl(link);
+  };
+  urlInput.addEventListener('paste', () => { setTimeout(tryUrl, 0); });
+  urlInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); tryUrl(); } });
+  urlInput.addEventListener('input', () => {
+    const raw = urlInput.value.trim();
+    if (parseStreamingUrl(raw)) tryUrl();
+  });
   document.getElementById('add-blank-btn').addEventListener('click', () => { addBlankSong(); closeSheet(); });
   openSheetEl();
   setTimeout(() => input.focus(), 200);
+}
+
+function parseStreamingUrl(raw) {
+  if (!raw) return null;
+  const m = raw.match(/https?:\/\/[^\s]+/); if (!m) return null;
+  const url = m[0];
+  const spotifyTrack = url.match(/open\.spotify\.com\/(?:intl-[a-z]{2}\/)?track\/([A-Za-z0-9]+)/);
+  if (spotifyTrack) return { type: 'spotify', url, id: spotifyTrack[1] };
+  const ytLong = url.match(/youtube\.com\/watch\?[^#]*\bv=([A-Za-z0-9_-]{6,})/);
+  if (ytLong) return { type: 'youtube', url, id: ytLong[1] };
+  const ytShort = url.match(/youtu\.be\/([A-Za-z0-9_-]{6,})/);
+  if (ytShort) return { type: 'youtube', url, id: ytShort[1] };
+  return null;
+}
+
+async function doSongSearchByUrl(link) {
+  const resultEl = document.getElementById('search-result');
+  resultEl.innerHTML = `<div class="search-loading"><span class="spinner"></span>Reading link…</div>`;
+  let context = link.url;
+  const title = await fetchOembed({ type: link.type, url: link.url });
+  if (title) context = title;
+  resultEl.innerHTML = `<div class="search-loading"><span class="spinner"></span>Looking up song details…</div>`;
+  try {
+    const result = await searchSong({ query: context, sourceUrl: link.url });
+    renderSearchResult(result, link.url);
+  } catch (e) {
+    console.error(e);
+    resultEl.innerHTML = `<div class="search-empty">Couldn't reach the search service. Try again or add a blank song below.</div>`;
+  }
 }
 
 function parseUrl(input) {
@@ -761,11 +806,12 @@ function renderSearchResult(result, sourceUrl) {
     return;
   }
   const sectionCount = (result.flow || []).length;
-  const srcLink = sourceUrl
-    ? (sourceUrl.includes('spotify.com')
-      ? `<a href="${escapeHtml(sourceUrl)}" target="_blank" rel="noopener" class="src spotify">${SVG_SPOTIFY}Spotify</a>`
-      : `<a href="${escapeHtml(sourceUrl)}" target="_blank" rel="noopener" class="src youtube">${SVG_YOUTUBE}YouTube</a>`)
-    : '';
+  const spotifyUrl = (sourceUrl && sourceUrl.includes('spotify.com')) ? sourceUrl : (result.spotifyUrl || null);
+  const youtubeUrl = (sourceUrl && (sourceUrl.includes('youtube.com') || sourceUrl.includes('youtu.be'))) ? sourceUrl : (result.youtubeUrl || null);
+  const linksHtml = [
+    spotifyUrl ? `<a href="${escapeHtml(spotifyUrl)}" target="_blank" rel="noopener noreferrer" class="src spotify">${SVG_SPOTIFY}Spotify</a>` : '',
+    youtubeUrl ? `<a href="${escapeHtml(youtubeUrl)}" target="_blank" rel="noopener noreferrer" class="src youtube">${SVG_YOUTUBE}YouTube</a>` : '',
+  ].filter(Boolean).join('');
   resultEl.innerHTML = `
     <div class="song-preview">
       <div class="preview-top">
@@ -777,7 +823,7 @@ function renderSearchResult(result, sourceUrl) {
             ${result.originalKey ? `<span class="pill">Key ${escapeHtml(result.originalKey)}</span>` : ''}
             ${result.bpm ? `<span class="pill">${result.bpm} BPM</span>` : ''}
             ${sectionCount ? `<span class="pill">${sectionCount} sections</span>` : ''}
-            ${srcLink}
+            ${linksHtml}
           </div>
         </div>
       </div>

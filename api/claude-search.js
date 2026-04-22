@@ -19,10 +19,14 @@ export default async function handler(req, res) {
 
   const query = (payload.query || '').toString().trim();
   const sourceUrl = payload.sourceUrl ? String(payload.sourceUrl) : null;
-  if (!query) return res.status(400).json({ error: 'Missing query' });
+  if (!query && !sourceUrl) return res.status(400).json({ error: 'Missing query' });
 
-  const linkContext = sourceUrl ? `\nSource link: ${sourceUrl}` : '';
-  const prompt = `You are a worship music database assistant. The user wants to add a song to their setlist. Query: "${query}"${linkContext}
+  const isSpotify = sourceUrl && sourceUrl.includes('spotify.com');
+  const isYoutube = sourceUrl && (sourceUrl.includes('youtube.com') || sourceUrl.includes('youtu.be'));
+  const linkContext = sourceUrl
+    ? `\n\nThe user provided this link: ${sourceUrl}\nThis is a direct ${isSpotify ? 'Spotify' : isYoutube ? 'YouTube' : 'streaming'} link. Identify the song at this link using the URL and any context from the query above, and return its metadata. If the link refers to a ${isSpotify ? 'Spotify track' : isYoutube ? 'YouTube video'} you recognise, prefer the information implied by the link (e.g. the artist's official upload) over a similarly named cover.`
+    : '';
+  const prompt = `You are a worship music database assistant. The user wants to add a song to their setlist. Query: "${query || '(none)'}"${linkContext}
 
 Return ONLY a single JSON object (no markdown fences, no explanation). Schema:
 {
@@ -42,6 +46,7 @@ Rules:
 - Number repeats only when lyrics differ ('Verse 1', 'Verse 2'); choruses usually just 'Chorus'.
 - If you don't recognize the song, return {"found": false} with everything null.
 - Use D♭ not Db, B♭ not Bb, F♯ not F#.
+- If a source link was provided, include that same link in the matching spotifyUrl or youtubeUrl field of the response.
 
 JSON only.`;
 
