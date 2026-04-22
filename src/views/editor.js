@@ -12,7 +12,7 @@ import {
   onSaveStatus,
   generateShareToken,
 } from '../lib/library.js';
-import { searchSong, generateChordSheet } from '../lib/ai.js';
+import { searchSong, searchPCO, generateChordSheet } from '../lib/ai.js';
 import { signOut } from '../lib/auth.js';
 import { renderLibrarySheetHTML } from './library-sheet.js';
 import {
@@ -683,27 +683,83 @@ function openLinkSheet(songId, platform) {
 }
 
 // ---------- Add song / AI search ----------
+const SVG_CROSS = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M12 4v16M7 10h10"/></svg>`;
+let pcoCachedResults = [];
+
 function openAddSongSheet() {
+  const tabBarStyle = 'display:flex;gap:.35rem;border-bottom:1px solid var(--line);margin:-.25rem 0 1rem;padding-bottom:0';
+  const tabStyle = 'flex:1;padding:.65rem .5rem;background:transparent;border:none;color:var(--ink-mute);font-family:\'JetBrains Mono\',monospace;font-size:.68rem;font-weight:500;letter-spacing:.18em;text-transform:uppercase;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:.4rem;position:relative;transition:color .15s';
   setSheet(`
     <div class="sheet-title">Add Song</div>
-    <div class="sheet-sub">Search by name, or paste a Spotify / YouTube link</div>
-    <div class="search-row">
-      <input class="field-input" id="song-search" type="text" placeholder="e.g. 'Abide UPPERROOM'…" autocomplete="off">
-      <button class="search-btn" id="do-search">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.35-4.35"/></svg>Find
+    <div class="sheet-sub" id="add-sub">Search the web, your PCO library, or add a blank song</div>
+    <div class="add-tabs" style="${tabBarStyle}">
+      <button class="add-tab active" data-add-tab="search" style="${tabStyle};color:var(--gold)">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" style="width:11px;height:11px"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.35-4.35"/></svg>
+        Search
+      </button>
+      <button class="add-tab" data-add-tab="pco" style="${tabStyle}">
+        <span style="display:inline-flex;width:11px;height:11px">${SVG_CROSS}</span>
+        PCO
+      </button>
+      <button class="add-tab" data-add-tab="manual" style="${tabStyle}">
+        Manual
       </button>
     </div>
-    <div class="field-label" style="margin-top:.35rem">Or paste a Spotify or YouTube link</div>
-    <input class="field-input" id="song-url" type="url" placeholder="https://open.spotify.com/track/..." autocomplete="off">
-    <div class="search-hint">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg>
-      Auto-fills key, BPM & flow as a starting preset
+
+    <div class="add-pane" data-pane="search">
+      <div class="search-row">
+        <input class="field-input" id="song-search" type="text" placeholder="e.g. 'Abide UPPERROOM'…" autocomplete="off">
+        <button class="search-btn" id="do-search">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.35-4.35"/></svg>Find
+        </button>
+      </div>
+      <div class="field-label" style="margin-top:.35rem">Or paste a Spotify or YouTube link</div>
+      <input class="field-input" id="song-url" type="url" placeholder="https://open.spotify.com/track/..." autocomplete="off">
+      <div class="search-hint">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg>
+        Auto-fills key, BPM & flow as a starting preset
+      </div>
+      <div id="search-result"></div>
     </div>
-    <div id="search-result"></div>
-    <div class="sheet-divider">or</div>
-    <button class="sheet-secondary" id="add-blank-btn">Add Blank Song</button>
+
+    <div class="add-pane" data-pane="pco" hidden>
+      <div class="search-row">
+        <input class="field-input" id="pco-search" type="text" placeholder="Search your PCO library…" autocomplete="off">
+        <button class="search-btn" id="pco-do-search">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.35-4.35"/></svg>Find
+        </button>
+      </div>
+      <div class="search-hint">
+        <span style="display:inline-flex;width:11px;height:11px;opacity:.7">${SVG_CROSS}</span>
+        Pulls key & sequence from your default arrangement
+      </div>
+      <div id="pco-result"></div>
+    </div>
+
+    <div class="add-pane" data-pane="manual" hidden>
+      <p class="sheet-text">Add a song with no details — fill in the title, key and flow yourself.</p>
+      <button class="sheet-secondary" id="add-blank-btn">Add Blank Song</button>
+    </div>
+
     <button class="sheet-cancel" data-close>Cancel</button>
   `);
+
+  // Tab switching
+  const panes = document.querySelectorAll('#sheet-body .add-pane');
+  const tabs = document.querySelectorAll('#sheet-body .add-tab');
+  const switchTab = (tab) => {
+    tabs.forEach((t) => {
+      const active = t.dataset.addTab === tab;
+      t.classList.toggle('active', active);
+      t.style.color = active ? 'var(--gold)' : 'var(--ink-mute)';
+    });
+    panes.forEach((p) => { p.hidden = p.dataset.pane !== tab; });
+    if (tab === 'search') setTimeout(() => document.getElementById('song-search')?.focus(), 60);
+    if (tab === 'pco') setTimeout(() => document.getElementById('pco-search')?.focus(), 60);
+  };
+  tabs.forEach((t) => t.addEventListener('click', () => switchTab(t.dataset.addTab)));
+
+  // Search tab
   const input = document.getElementById('song-search');
   const urlInput = document.getElementById('song-url');
   const trigger = () => doSongSearch(input.value.trim());
@@ -722,9 +778,61 @@ function openAddSongSheet() {
     const raw = urlInput.value.trim();
     if (parseStreamingUrl(raw)) tryUrl();
   });
+
+  // PCO tab
+  const pcoInput = document.getElementById('pco-search');
+  const pcoTrigger = () => doPCOSearch(pcoInput.value.trim());
+  document.getElementById('pco-do-search').addEventListener('click', pcoTrigger);
+  pcoInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); pcoTrigger(); } });
+
+  // Manual tab
   document.getElementById('add-blank-btn').addEventListener('click', () => { addBlankSong(); closeSheet(); });
+
   openSheetEl();
   setTimeout(() => input.focus(), 200);
+}
+
+async function doPCOSearch(rawQuery) {
+  if (!rawQuery) return;
+  const resultEl = document.getElementById('pco-result');
+  resultEl.innerHTML = `<div class="search-loading"><span class="spinner"></span>Searching PCO…</div>`;
+  try {
+    const { results } = await searchPCO({ query: rawQuery });
+    pcoCachedResults = Array.isArray(results) ? results : [];
+    renderPCOResults(pcoCachedResults);
+  } catch (e) {
+    console.error(e);
+    pcoCachedResults = [];
+    resultEl.innerHTML = `<div class="search-empty">Couldn't reach PCO. Check your connection and try again.</div>`;
+  }
+}
+
+function renderPCOResults(results) {
+  const resultEl = document.getElementById('pco-result');
+  if (!resultEl) return;
+  if (!results || !results.length) {
+    resultEl.innerHTML = `<div class="search-empty">No matches in your PCO library. Try a different name.</div>`;
+    return;
+  }
+  resultEl.innerHTML = results.map((r, i) => {
+    const sectionCount = (r.flow || []).length;
+    return `
+      <div class="song-preview" style="margin-bottom:.65rem">
+        <div class="preview-top">
+          <div class="preview-icon">${SVG_CROSS}</div>
+          <div class="preview-meta">
+            <div class="preview-title">${escapeHtml(r.title)}</div>
+            <div class="preview-artist">${escapeHtml(r.artist || 'Unknown author')}</div>
+            <div class="preview-stats">
+              ${r.originalKey ? `<span class="pill">Key ${escapeHtml(r.originalKey)}</span>` : ''}
+              ${r.bpm ? `<span class="pill">${r.bpm} BPM</span>` : ''}
+              ${sectionCount ? `<span class="pill">${sectionCount} sections</span>` : `<span class="pill">No sequence</span>`}
+            </div>
+          </div>
+        </div>
+        <button class="preview-add" data-action="accept-pco" data-pco-idx="${i}">Add to Setlist</button>
+      </div>`;
+  }).join('');
 }
 
 function parseStreamingUrl(raw) {
@@ -913,6 +1021,15 @@ function handleClick(e) {
       break;
     }
     case 'link-edit': openLinkSheet(songId, t.dataset.platform); break;
+    case 'accept-pco': {
+      const idx = parseInt(t.dataset.pcoIdx, 10);
+      const result = pcoCachedResults[idx];
+      if (result) {
+        addSongFromPreset(result, null);
+        closeSheet();
+      }
+      break;
+    }
     case 'edit-label': {
       const sid = t.closest('.flow').dataset.songId;
       const item = findSong(sid).flow.find((r) => r.id === t.closest('.flow-row').dataset.rowId);

@@ -17,6 +17,10 @@ export async function searchSong({ query, sourceUrl }) {
   return postJSON('/api/claude-search', { query, sourceUrl: sourceUrl || null });
 }
 
+export async function searchPCO({ query }) {
+  return postJSON('/api/pco-search', { query });
+}
+
 export async function generateChordSheet({ title, artist, keyOf, flow }) {
   return postJSON('/api/claude-chords', { title, artist, keyOf, flow });
 }
