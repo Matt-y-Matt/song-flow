@@ -23,8 +23,18 @@ export default async function handler(req, res) {
 
   const isSpotify = sourceUrl && sourceUrl.includes('spotify.com');
   const isYoutube = sourceUrl && (sourceUrl.includes('youtube.com') || sourceUrl.includes('youtu.be'));
+  let idContext = '';
+  if (sourceUrl) {
+    if (isSpotify) {
+      const m = sourceUrl.match(/track\/([A-Za-z0-9]+)/);
+      if (m) idContext = `\nSpotify track ID: ${m[1]}`;
+    } else if (isYoutube) {
+      const m = sourceUrl.match(/(?:[?&]v=|youtu\.be\/)([A-Za-z0-9_-]{6,})/);
+      if (m) idContext = `\nYouTube video ID: ${m[1]}`;
+    }
+  }
   const linkContext = sourceUrl
-    ? `\n\nThe user provided this link: ${sourceUrl}\nThis is a direct ${isSpotify ? 'Spotify' : isYoutube ? 'YouTube' : 'streaming'} link. Identify the song at this link using the URL and any context from the query above, and return its metadata. If the link refers to a ${isSpotify ? 'Spotify track' : isYoutube ? 'YouTube video'} you recognise, prefer the information implied by the link (e.g. the artist's official upload) over a similarly named cover.`
+    ? `\n\nThe user provided this direct link: ${sourceUrl}. Identify the exact song at this URL and return its metadata.${idContext}\nThis is a direct ${isSpotify ? 'Spotify' : isYoutube ? 'YouTube' : 'streaming'} link. If the link refers to a ${isSpotify ? 'Spotify track' : isYoutube ? 'YouTube video' : 'track'} you recognise, prefer the information implied by the link (e.g. the artist's official upload) over a similarly named cover.`
     : '';
   const prompt = `You are a worship music database assistant. The user wants to add a song to their setlist. Query: "${query || '(none)'}"${linkContext}
 

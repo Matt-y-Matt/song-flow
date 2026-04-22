@@ -9,6 +9,7 @@ import {
   scheduleSave,
   flushSave,
   saveChordSheet,
+  updateChordSheet,
   onSaveStatus,
   generateShareToken,
 } from '../lib/library.js';
@@ -28,6 +29,13 @@ let mount = null;
 let state = null;           // current setlist (v7-shaped)
 let summaries = [];         // all setlists for the user
 let saveStatus = 'idle';
+
+// Per-song chord editor state (ephemeral, not persisted).
+const chordEdit = {
+  editing: new Set(),   // song ids currently in edit mode
+  timers: new Map(),    // song id -> debounce timeout id
+  status: new Map(),    // song id -> 'saving' | 'saved' | 'error'
+};
 
 // ---------- Helpers ----------
 function songIndex(id) { return state.songs.findIndex((s) => s.id === id); }
@@ -109,7 +117,8 @@ function renderChordSheetText(text) {
 
 function renderChordsView(song) {
   const chordText = song.chords?.[song.keyOf];
-  if (!chordText) {
+  const editing = chordEdit.editing.has(song.id);
+  if (!chordText && !editing) {
     return `<div class="chords-pane"><div class="chords-empty">
       <div class="icon">${SVG_CHORDS}</div>
       <div class="msg">No chord chart yet for the key of <strong style="color:var(--gold)">${escapeHtml(song.keyOf)}</strong>. Generate one with AI?</div>
@@ -119,14 +128,23 @@ function renderChordsView(song) {
       </button>
     </div></div>`;
   }
+  const text = chordText || '';
+  const status = chordEdit.status.get(song.id) || '';
+  const statusLabels = { saving: 'Saving…', saved: 'Saved', error: 'Save error' };
+  const statusColor = status === 'error' ? 'var(--danger)' : status === 'saved' ? 'var(--sage)' : 'var(--ink-mute)';
   return `<div class="chords-pane">
     <div class="chords-meta">
       <div class="chords-key-pill">Key of ${escapeHtml(song.keyOf)}</div>
       <div class="chords-actions">
-        <button class="chords-action-btn" data-action="gen-chords" data-song-id="${song.id}" data-force="1">${SVG_REFRESH} Regenerate</button>
+        <span class="chord-save-indicator" id="chord-save-${song.id}" style="font-family:'JetBrains Mono',monospace;font-size:.58rem;letter-spacing:.18em;text-transform:uppercase;color:${statusColor}">${statusLabels[status] || ''}</span>
+        <button class="chords-action-btn" data-action="toggle-chord-edit" data-song-id="${song.id}" aria-label="${editing ? 'Done editing' : 'Edit chord sheet'}" title="${editing ? 'Done editing' : 'Edit chord sheet'}">${SVG_PEN} ${editing ? 'Done' : 'Edit'}</button>
+        ${!editing ? `<button class="chords-action-btn" data-action="gen-chords" data-song-id="${song.id}" data-force="1">${SVG_REFRESH} Regenerate</button>` : ''}
       </div>
     </div>
-    <div class="chord-sheet">${renderChordSheetText(chordText)}</div>
+    ${editing
+      ? `<textarea class="chord-edit-area" id="chord-edit-${song.id}" data-song-id="${song.id}" spellcheck="false" style="width:100%;box-sizing:border-box;min-height:300px;padding:1rem;background:var(--bg-2);border:1px solid var(--gold);border-radius:10px;color:var(--ink);font-family:'JetBrains Mono',monospace;font-size:.78rem;line-height:1.7;resize:vertical;outline:none">${escapeHtml(text)}</textarea>`
+      : `<div class="chord-sheet">${renderChordSheetText(text)}</div>`
+    }
     <div class="chord-disclaimer">AI-generated · verify with your chord chart before service</div>
   </div>`;
 }
@@ -713,8 +731,8 @@ function openAddSongSheet() {
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.35-4.35"/></svg>Find
         </button>
       </div>
-      <div class="field-label" style="margin-top:.35rem">Or paste a Spotify or YouTube link</div>
-      <input class="field-input" id="song-url" type="url" placeholder="https://open.spotify.com/track/..." autocomplete="off">
+      <div class="field-label" style="margin-top:.35rem">Or paste a Spotify or YouTube URL</div>
+      <input class="field-input" id="song-url" type="url" placeholder="https://open.spotify.com/track/..." autocomplete="off" style="margin-bottom:0.75rem;font-size:.78rem">
       <div class="search-hint">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg>
         Auto-fills key, BPM & flow as a starting preset
@@ -916,9 +934,9 @@ function renderSearchResult(result, sourceUrl) {
   const sectionCount = (result.flow || []).length;
   const spotifyUrl = (sourceUrl && sourceUrl.includes('spotify.com')) ? sourceUrl : (result.spotifyUrl || null);
   const youtubeUrl = (sourceUrl && (sourceUrl.includes('youtube.com') || sourceUrl.includes('youtu.be'))) ? sourceUrl : (result.youtubeUrl || null);
-  const linksHtml = [
-    spotifyUrl ? `<a href="${escapeHtml(spotifyUrl)}" target="_blank" rel="noopener noreferrer" class="src spotify">${SVG_SPOTIFY}Spotify</a>` : '',
-    youtubeUrl ? `<a href="${escapeHtml(youtubeUrl)}" target="_blank" rel="noopener noreferrer" class="src youtube">${SVG_YOUTUBE}YouTube</a>` : '',
+  const openBtns = [
+    spotifyUrl ? `<a class="link-open-btn spotify" href="${escapeHtml(spotifyUrl)}" target="_blank" rel="noopener" style="margin-bottom:.5rem">${SVG_SPOTIFY}Open in Spotify ${SVG_OPEN}</a>` : '',
+    youtubeUrl ? `<a class="link-open-btn youtube" href="${escapeHtml(youtubeUrl)}" target="_blank" rel="noopener" style="margin-bottom:.5rem">${SVG_YOUTUBE}Open in YouTube ${SVG_OPEN}</a>` : '',
   ].filter(Boolean).join('');
   resultEl.innerHTML = `
     <div class="song-preview">
@@ -931,16 +949,97 @@ function renderSearchResult(result, sourceUrl) {
             ${result.originalKey ? `<span class="pill">Key ${escapeHtml(result.originalKey)}</span>` : ''}
             ${result.bpm ? `<span class="pill">${result.bpm} BPM</span>` : ''}
             ${sectionCount ? `<span class="pill">${sectionCount} sections</span>` : ''}
-            ${linksHtml}
           </div>
         </div>
       </div>
+      ${openBtns ? `<div class="preview-links" style="margin-top:.85rem">${openBtns}</div>` : ''}
       <button class="preview-add" id="accept-preset">Add to Setlist · Edit From Here</button>
     </div>`;
   document.getElementById('accept-preset').addEventListener('click', () => {
     addSongFromPreset(result, sourceUrl);
     closeSheet();
   });
+}
+
+// ---------- Chord editing ----------
+function updateChordSaveIndicator(songId, status) {
+  if (status) chordEdit.status.set(songId, status);
+  else chordEdit.status.delete(songId);
+  const el = document.getElementById(`chord-save-${songId}`);
+  if (!el) return;
+  const labels = { saving: 'Saving…', saved: 'Saved', error: 'Save error' };
+  el.textContent = labels[status] || '';
+  el.style.color = status === 'error' ? 'var(--danger)'
+    : status === 'saved' ? 'var(--sage)'
+    : 'var(--ink-mute)';
+}
+
+function scheduleChordSave(songId) {
+  const song = findSong(songId); if (!song) return;
+  updateChordSaveIndicator(songId, 'saving');
+  const t = chordEdit.timers.get(songId);
+  if (t) clearTimeout(t);
+  const timeout = setTimeout(async () => {
+    chordEdit.timers.delete(songId);
+    const value = song.chords?.[song.keyOf] ?? '';
+    try {
+      await updateChordSheet(songId, song.keyOf, value);
+      updateChordSaveIndicator(songId, 'saved');
+      setTimeout(() => {
+        if (chordEdit.status.get(songId) === 'saved') updateChordSaveIndicator(songId, null);
+      }, 1400);
+    } catch (e) {
+      console.error('[song-flow] chord save failed', e);
+      updateChordSaveIndicator(songId, 'error');
+    }
+  }, 600);
+  chordEdit.timers.set(songId, timeout);
+}
+
+function handleChordInput(e) {
+  const ta = e.target;
+  if (!(ta instanceof HTMLTextAreaElement)) return;
+  if (!ta.classList.contains('chord-edit-area')) return;
+  const songId = ta.dataset.songId;
+  const song = findSong(songId); if (!song) return;
+  if (!song.chords) song.chords = {};
+  song.chords[song.keyOf] = ta.value;
+  scheduleChordSave(songId);
+}
+
+function toggleChordEdit(songId) {
+  const song = findSong(songId); if (!song) return;
+  const wasEditing = chordEdit.editing.has(songId);
+  if (wasEditing) {
+    // If a debounced save is pending, flush it now.
+    const t = chordEdit.timers.get(songId);
+    if (t) {
+      clearTimeout(t);
+      chordEdit.timers.delete(songId);
+      const value = song.chords?.[song.keyOf] ?? '';
+      updateChordSaveIndicator(songId, 'saving');
+      updateChordSheet(songId, song.keyOf, value)
+        .then(() => {
+          updateChordSaveIndicator(songId, 'saved');
+          setTimeout(() => {
+            if (chordEdit.status.get(songId) === 'saved') updateChordSaveIndicator(songId, null);
+          }, 1400);
+        })
+        .catch((e) => { console.error('[song-flow] chord save failed', e); updateChordSaveIndicator(songId, 'error'); });
+    }
+    chordEdit.editing.delete(songId);
+  } else {
+    chordEdit.editing.add(songId);
+  }
+  const pane = document.querySelector(`#song-${songId} .view-chords`);
+  if (pane) pane.innerHTML = renderChordsView(song);
+  if (!wasEditing) {
+    const ta = document.getElementById(`chord-edit-${songId}`);
+    if (ta) {
+      ta.focus();
+      try { ta.selectionStart = ta.selectionEnd = ta.value.length; } catch {}
+    }
+  }
 }
 
 // ---------- AI Chord Sheet ----------
@@ -1004,6 +1103,7 @@ function handleClick(e) {
     case 'delete-row': deleteRow(t.closest('.flow').dataset.songId, t.closest('.flow-row').dataset.rowId); break;
     case 'set-view': setSongView(songId, t.dataset.view); break;
     case 'gen-chords': generateChords(songId, t.dataset.force === '1'); break;
+    case 'toggle-chord-edit': toggleChordEdit(songId); break;
     case 'open-library': openLibrarySheet(); break;
     case 'load-set': loadSetlistById(t.dataset.setId); break;
     case 'dup-set': duplicateSetlistById(t.dataset.setId); break;
@@ -1116,6 +1216,7 @@ let detachSaveStatus = null;
 function attachListeners() {
   if (detachListeners) return;
   document.addEventListener('click', handleClick);
+  document.addEventListener('input', handleChordInput);
   document.getElementById('backdrop').addEventListener('click', closeSheet);
   detachSaveStatus = onSaveStatus((status) => {
     saveStatus = status;
@@ -1124,6 +1225,7 @@ function attachListeners() {
   });
   detachListeners = () => {
     document.removeEventListener('click', handleClick);
+    document.removeEventListener('input', handleChordInput);
     document.getElementById('backdrop').removeEventListener('click', closeSheet);
     detachSaveStatus?.();
   };

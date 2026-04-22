@@ -304,6 +304,17 @@ export async function saveChordSheet(songId, keyOf, content) {
   if (error) throw error;
 }
 
+// Edit-mode update — preserves generated_at so an edit doesn't look like a regeneration.
+export async function updateChordSheet(songId, keyOf, content) {
+  const { error } = await supabase
+    .from('chord_sheets')
+    .upsert(
+      { song_id: songId, key_of: keyOf, content },
+      { onConflict: 'song_id,key_of' },
+    );
+  if (error) throw error;
+}
+
 // ---------- Save queue (debounced, per-user) ----------
 let saveTimer = null;
 let pendingState = null;

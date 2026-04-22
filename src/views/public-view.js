@@ -1,13 +1,21 @@
-import { getSetlistByShareToken } from '../lib/library.js';
+import { getSetlistByShareToken, updateChordSheet } from '../lib/library.js';
 import { signInWithGoogle } from '../lib/auth.js';
 import {
-  SVG_SPOTIFY, SVG_YOUTUBE, SVG_CAL, SVG_FLOW, SVG_CHORDS,
+  SVG_SPOTIFY, SVG_YOUTUBE, SVG_PEN, SVG_CAL, SVG_FLOW, SVG_CHORDS,
   TAG_LABEL, escapeHtml, formatDate,
 } from './editor-shared.js';
 
 let mount = null;
 let state = null;
 let detachClick = null;
+let detachInput = null;
+
+// Per-song chord editor state (ephemeral, not persisted).
+const chordEdit = {
+  editing: new Set(),
+  timers: new Map(),
+  status: new Map(),
+};
 
 function findSong(id) { return state.songs.find((s) => s.id === id); }
 
@@ -47,19 +55,110 @@ function renderChordSheetText(text) {
 
 function renderChordsView(song) {
   const chordText = song.chords?.[song.keyOf];
-  if (!chordText) {
+  const editing = chordEdit.editing.has(song.id);
+  if (!chordText && !editing) {
     return `<div class="chords-pane"><div class="chords-empty">
       <div class="icon">${SVG_CHORDS}</div>
       <div class="msg">No chord chart available for the key of <strong style="color:var(--gold)">${escapeHtml(song.keyOf)}</strong>.</div>
     </div></div>`;
   }
+  const text = chordText || '';
+  const status = chordEdit.status.get(song.id) || '';
+  const statusLabels = { saving: 'Saving…', saved: 'Saved', error: 'Save error' };
+  const statusColor = status === 'error' ? 'var(--danger)' : status === 'saved' ? 'var(--sage)' : 'var(--ink-mute)';
   return `<div class="chords-pane">
     <div class="chords-meta">
       <div class="chords-key-pill">Key of ${escapeHtml(song.keyOf)}</div>
+      <div class="chords-actions">
+        <span class="chord-save-indicator" id="chord-save-${song.id}" style="font-family:'JetBrains Mono',monospace;font-size:.58rem;letter-spacing:.18em;text-transform:uppercase;color:${statusColor}">${statusLabels[status] || ''}</span>
+        <button class="chords-action-btn" data-view-action="toggle-chord-edit" data-song-id="${song.id}" aria-label="${editing ? 'Done editing' : 'Edit chord sheet'}" title="${editing ? 'Done editing' : 'Edit chord sheet'}">${SVG_PEN} ${editing ? 'Done' : 'Edit'}</button>
+      </div>
     </div>
-    <div class="chord-sheet">${renderChordSheetText(chordText)}</div>
+    ${editing
+      ? `<textarea class="chord-edit-area" id="chord-edit-${song.id}" data-song-id="${song.id}" spellcheck="false" style="width:100%;box-sizing:border-box;min-height:300px;padding:1rem;background:var(--bg-2);border:1px solid var(--gold);border-radius:10px;color:var(--ink);font-family:'JetBrains Mono',monospace;font-size:.78rem;line-height:1.7;resize:vertical;outline:none">${escapeHtml(text)}</textarea>`
+      : `<div class="chord-sheet">${renderChordSheetText(text)}</div>`
+    }
     <div class="chord-disclaimer">AI-generated · verify with your chord chart before service</div>
   </div>`;
+}
+
+function updateChordSaveIndicator(songId, status) {
+  if (status) chordEdit.status.set(songId, status);
+  else chordEdit.status.delete(songId);
+  const el = mount?.querySelector(`#chord-save-${songId}`);
+  if (!el) return;
+  const labels = { saving: 'Saving…', saved: 'Saved', error: 'Save error' };
+  el.textContent = labels[status] || '';
+  el.style.color = status === 'error' ? 'var(--danger)'
+    : status === 'saved' ? 'var(--sage)'
+    : 'var(--ink-mute)';
+}
+
+function scheduleChordSave(songId) {
+  const song = findSong(songId); if (!song) return;
+  updateChordSaveIndicator(songId, 'saving');
+  const t = chordEdit.timers.get(songId);
+  if (t) clearTimeout(t);
+  const timeout = setTimeout(async () => {
+    chordEdit.timers.delete(songId);
+    const value = song.chords?.[song.keyOf] ?? '';
+    try {
+      await updateChordSheet(songId, song.keyOf, value);
+      updateChordSaveIndicator(songId, 'saved');
+      setTimeout(() => {
+        if (chordEdit.status.get(songId) === 'saved') updateChordSaveIndicator(songId, null);
+      }, 1400);
+    } catch (e) {
+      console.error('[song-flow] chord save failed', e);
+      updateChordSaveIndicator(songId, 'error');
+    }
+  }, 600);
+  chordEdit.timers.set(songId, timeout);
+}
+
+function handleChordInput(e) {
+  const ta = e.target;
+  if (!(ta instanceof HTMLTextAreaElement)) return;
+  if (!ta.classList.contains('chord-edit-area')) return;
+  const songId = ta.dataset.songId;
+  const song = findSong(songId); if (!song) return;
+  if (!song.chords) song.chords = {};
+  song.chords[song.keyOf] = ta.value;
+  scheduleChordSave(songId);
+}
+
+function toggleChordEdit(songId) {
+  const song = findSong(songId); if (!song) return;
+  const wasEditing = chordEdit.editing.has(songId);
+  if (wasEditing) {
+    const t = chordEdit.timers.get(songId);
+    if (t) {
+      clearTimeout(t);
+      chordEdit.timers.delete(songId);
+      const value = song.chords?.[song.keyOf] ?? '';
+      updateChordSaveIndicator(songId, 'saving');
+      updateChordSheet(songId, song.keyOf, value)
+        .then(() => {
+          updateChordSaveIndicator(songId, 'saved');
+          setTimeout(() => {
+            if (chordEdit.status.get(songId) === 'saved') updateChordSaveIndicator(songId, null);
+          }, 1400);
+        })
+        .catch((e) => { console.error('[song-flow] chord save failed', e); updateChordSaveIndicator(songId, 'error'); });
+    }
+    chordEdit.editing.delete(songId);
+  } else {
+    chordEdit.editing.add(songId);
+  }
+  const pane = mount?.querySelector(`#song-${songId} .view-chords`);
+  if (pane) pane.innerHTML = renderChordsView(song);
+  if (!wasEditing) {
+    const ta = mount?.querySelector(`#chord-edit-${songId}`);
+    if (ta) {
+      ta.focus();
+      try { ta.selectionStart = ta.selectionEnd = ta.value.length; } catch {}
+    }
+  }
 }
 
 function renderSong(song, index) {
@@ -118,9 +217,9 @@ function render() {
   mount.innerHTML = `
     <div class="view-banner">
       <div class="view-banner-text">
-        Viewing <strong>${escapeHtml(state.name)}</strong> · Read-only
+        Viewing <strong>${escapeHtml(state.name)}</strong> · Chord edits are shared
       </div>
-      <button class="view-banner-btn" data-view-action="signin">Sign in to edit</button>
+      <button class="view-banner-btn" data-view-action="signin">Sign in to edit setlist</button>
     </div>
     <header>
       <div class="kicker"><span class="dot"></span>${escapeHtml(state.name)} · Setlist</div>
@@ -197,6 +296,11 @@ function handleClick(e) {
     signInWithGoogle().catch((err) => console.error('[song-flow] sign-in failed', err));
     return;
   }
+  const toggle = e.target.closest('[data-view-action="toggle-chord-edit"]');
+  if (toggle) {
+    toggleChordEdit(toggle.dataset.songId);
+    return;
+  }
   const tab = e.target.closest('[data-view-tab]');
   if (tab) {
     setSongView(tab.dataset.songId, tab.dataset.viewTab);
@@ -213,6 +317,11 @@ export async function initPublicView(token, _mount) {
       document.addEventListener('click', fn);
       detachClick = () => document.removeEventListener('click', fn);
     }
+    if (!detachInput) {
+      const fn = handleChordInput;
+      document.addEventListener('input', fn);
+      detachInput = () => document.removeEventListener('input', fn);
+    }
     render();
   } catch (e) {
     console.error('[song-flow] public view load failed', e);
@@ -226,6 +335,8 @@ export async function initPublicView(token, _mount) {
 
 export async function teardownPublicView() {
   detachClick?.();
+  detachInput?.();
   detachClick = null;
+  detachInput = null;
   state = null;
 }
