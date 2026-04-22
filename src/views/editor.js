@@ -10,13 +10,14 @@ import {
   flushSave,
   saveChordSheet,
   onSaveStatus,
+  generateShareToken,
 } from '../lib/library.js';
 import { searchSong, generateChordSheet } from '../lib/ai.js';
 import { signOut } from '../lib/auth.js';
 import { renderLibrarySheetHTML } from './library-sheet.js';
 import {
   SVG_SPOTIFY, SVG_YOUTUBE, SVG_PEN, SVG_OPEN, SVG_TRASH, SVG_LIBRARY,
-  SVG_CAL, SVG_FLOW, SVG_CHORDS, SVG_REFRESH, SVG_SIGNOUT,
+  SVG_CAL, SVG_FLOW, SVG_CHORDS, SVG_REFRESH, SVG_SIGNOUT, SVG_SHARE, SVG_COPY,
   SECTION_TYPES, TAG_LABEL, VALID_TYPES, KEYS_LIST,
   uid, todayISO, escapeHtml, formatDate,
 } from './editor-shared.js';
@@ -192,6 +193,7 @@ function render() {
       <button class="lib-btn" data-action="open-library">${SVG_LIBRARY} Setlists <span class="count">${setCount}</span></button>
       <div style="display:flex;gap:.4rem;align-items:center">
         <span id="save-dot" style="font-family:'JetBrains Mono',monospace;font-size:.58rem;letter-spacing:.18em;text-transform:uppercase;color:var(--ink-mute)"></span>
+        <button class="header-btn" data-action="share" title="Share view-only link" aria-label="Share view-only link">${SVG_SHARE}</button>
         <button class="header-btn" data-action="signout" title="Sign out" aria-label="Sign out">${SVG_SIGNOUT}</button>
       </div>
     </div>
@@ -855,6 +857,7 @@ function handleClick(e) {
     case 'rename-set': renameSetlistInline(t.dataset.setId); break;
     case 'new-set': createNewSetlist(); break;
     case 'signout': doSignOut(); break;
+    case 'share': openShareSheet(); break;
     case 'link-tap': {
       const platform = t.dataset.platform;
       const song = findSong(songId);
@@ -883,6 +886,58 @@ function handleClick(e) {
     case 'edit-name':
       startInlineEdit(t, state.name, (v) => { if (v) state.name = v; });
       break;
+  }
+}
+
+async function openShareSheet() {
+  if (!state?.id) return;
+  setSheet(`
+    <div class="sheet-title">Share Setlist</div>
+    <div class="sheet-sub">Read-only link · anyone with the URL can view</div>
+    <div class="share-loading" id="share-loading"><span class="spinner"></span>Generating link…</div>
+  `);
+  openSheetEl();
+  try {
+    const token = await generateShareToken(state.id);
+    const shareUrl = `https://song-flow-one.vercel.app/view/${token}`;
+    setSheet(`
+      <div class="sheet-title">Share Setlist</div>
+      <div class="sheet-sub">${escapeHtml(state.name)} · read-only</div>
+      <p class="sheet-text">Anyone with this link can view the setlist. They won't be able to edit anything.</p>
+      <label class="field-label">Share URL</label>
+      <div class="share-row">
+        <input class="field-input" id="share-url" type="text" value="${escapeHtml(shareUrl)}" readonly>
+        <button class="search-btn" id="share-copy">${SVG_COPY} Copy</button>
+      </div>
+      <div class="sheet-actions" style="grid-template-columns:1fr">
+        <button class="sheet-cancel" data-close>Done</button>
+      </div>
+    `);
+    const copyBtn = document.getElementById('share-copy');
+    const urlInput = document.getElementById('share-url');
+    const doCopy = async () => {
+      try {
+        await navigator.clipboard.writeText(shareUrl);
+        showToast('Link copied');
+      } catch {
+        urlInput.select();
+        try { document.execCommand('copy'); showToast('Link copied'); }
+        catch { showToast('Copy failed — select and copy manually'); }
+      }
+    };
+    copyBtn.addEventListener('click', doCopy);
+    urlInput.addEventListener('focus', () => urlInput.select());
+    setTimeout(() => { urlInput.select(); }, 100);
+  } catch (e) {
+    console.error('[song-flow] share link failed', e);
+    setSheet(`
+      <div class="sheet-title">Share Setlist</div>
+      <div class="sheet-sub" style="color:var(--danger)">Could not generate share link</div>
+      <p class="sheet-text">${escapeHtml(e?.message || 'Please try again in a moment.')}</p>
+      <div class="sheet-actions" style="grid-template-columns:1fr">
+        <button class="sheet-cancel" data-close>Close</button>
+      </div>
+    `);
   }
 }
 

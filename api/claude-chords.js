@@ -23,36 +23,25 @@ export default async function handler(req, res) {
     .map((f, i) => `${i + 1}. ${f.label || f.type} (${f.type})`)
     .join('\n');
 
-  const prompt = `Generate a chord chart for the worship song "${title}"${artist ? ` by ${artist}` : ''} in the key of ${keyOf}.
+  const prompt = `You are a worship music assistant creating a chord chart reference for a worship team rehearsal. Generate a chord-only chart (no full lyrics needed) for "${title}"${artist ? ` by ${artist}` : ''} in the key of ${keyOf}.
 
-Arrangement to follow:
+Arrangement:
 ${flowDescription}
 
-Format the output as plain text following this exact structure:
+Output format — plain text only, no markdown:
 
-[INTRO]
-| ${keyOf} | <other chords> |
-
-[VERSE 1]
-${keyOf}                 <next chord>
-First line of lyrics here
-<chord>             <chord>
-Second line of lyrics here
-
-[CHORUS]
-<chord>          <chord>
-Chorus lyrics line one
-...
+[SECTION NAME]
+Chord1    Chord2    Chord3    Chord4
+(optional: 2-3 keyword cue words to identify the line, not full lyrics)
 
 Rules:
-- Section headers in [SQUARE BRACKETS] uppercase.
-- Chord lines have only chord symbols (e.g. ${keyOf}, F♯m, B♭/D), separated by spaces aligned above the words they sound on.
-- Use unicode flat (♭) and sharp (♯), not 'b' and '#'.
-- Use slash chords where appropriate (e.g. ${keyOf}/E).
-- Include 1-2 lines of representative lyrics per section if you know them; if not, leave just the chord progression.
-- Match each section in the arrangement above. Use [INSTRUMENTAL] for instrumentals, [VAMP] for free worship vamps.
-- Do NOT include any commentary, intro text, or markdown fences. Plain text only.
-- Keep it concise — single example pass per section, not every repetition.`;
+- Section headers in [SQUARE BRACKETS] matching the arrangement above.
+- Each line shows chord symbols only, spaced to indicate timing/beats.
+- Use unicode ♭ and ♯ (not b/#). Use slash chords where natural (e.g. ${keyOf}/E).
+- If you know the chord progression for this song, use it. If not, generate a musically appropriate progression in ${keyOf} that fits the section type (verse, chorus, bridge etc).
+- Add brief cue words (2-3 words max) below chord lines if helpful for navigation — these are NOT full lyrics.
+- NO commentary, NO apologies, NO markdown fences, NO explanations. Pure chord chart only.
+- This is for personal rehearsal use by a worship team, not for publication.`;
 
   try {
     const msg = await client.messages.create({

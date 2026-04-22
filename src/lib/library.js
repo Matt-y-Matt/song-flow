@@ -226,6 +226,74 @@ export async function saveSetlistFull(state) {
   }
 }
 
+// ---------- Share links ----------
+export async function generateShareToken(setlistId) {
+  const { data: existing, error: eErr } = await supabase
+    .from('setlists')
+    .select('share_token')
+    .eq('id', setlistId)
+    .single();
+  if (eErr) throw eErr;
+  if (existing?.share_token) return existing.share_token;
+
+  const token = crypto.randomUUID();
+  const { error } = await supabase
+    .from('setlists')
+    .update({ share_token: token })
+    .eq('id', setlistId);
+  if (error) throw error;
+  return token;
+}
+
+export async function getSetlistByShareToken(token) {
+  const { data: set, error } = await supabase
+    .from('setlists')
+    .select('*')
+    .eq('share_token', token)
+    .single();
+  if (error) throw error;
+
+  const { data: songs, error: sErr } = await supabase
+    .from('songs')
+    .select('*')
+    .eq('setlist_id', set.id);
+  if (sErr) throw sErr;
+
+  const songIds = (songs || []).map((s) => s.id);
+  let sections = [];
+  let chords = [];
+  if (songIds.length) {
+    const [secRes, chRes] = await Promise.all([
+      supabase.from('flow_sections').select('*').in('song_id', songIds),
+      supabase.from('chord_sheets').select('*').in('song_id', songIds),
+    ]);
+    if (secRes.error) throw secRes.error;
+    if (chRes.error) throw chRes.error;
+    sections = secRes.data || [];
+    chords = chRes.data || [];
+  }
+  return rowToSetlist(set, songs, sections, chords);
+}
+
+export async function getPublicSongs(setlistId) {
+  const { data, error } = await supabase
+    .from('songs')
+    .select('*')
+    .eq('setlist_id', setlistId);
+  if (error) throw error;
+  return data || [];
+}
+
+export async function getPublicSections(songIds) {
+  if (!songIds?.length) return [];
+  const { data, error } = await supabase
+    .from('flow_sections')
+    .select('*')
+    .in('song_id', songIds);
+  if (error) throw error;
+  return data || [];
+}
+
 export async function saveChordSheet(songId, keyOf, content) {
   const { error } = await supabase
     .from('chord_sheets')
