@@ -57,7 +57,7 @@ Strict rules:
 
   try {
     const msg = await client.messages.create({
-      model: 'claude-sonnet-4-20250514',
+      model: 'claude-haiku-4-5',
       max_tokens: 2000,
       messages: [{ role: 'user', content: prompt }],
     });
@@ -69,3 +69,4 @@ Strict rules:
     return res.status(500).json({ error: err.message || 'Generation failed' });
   }
 }
+
