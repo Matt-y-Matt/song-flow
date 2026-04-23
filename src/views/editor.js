@@ -121,11 +121,17 @@ function renderChordsView(song) {
   if (!chordText && !editing) {
     return `<div class="chords-pane"><div class="chords-empty">
       <div class="icon">${SVG_CHORDS}</div>
-      <div class="msg">No chord chart yet for the key of <strong style="color:var(--gold)">${escapeHtml(song.keyOf)}</strong>. Generate one with AI?</div>
-      <button class="chords-gen-btn" data-action="gen-chords" data-song-id="${song.id}">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 3v4M19 17v4M3 5h4M17 19h4"/><path d="M11.5 8.5L9 11l4 4 2.5-2.5"/><circle cx="12" cy="12" r="9"/></svg>
-        Generate Chord Sheet
-      </button>
+      <div class="msg">No chord chart yet for the key of <strong style="color:var(--gold)">${escapeHtml(song.keyOf)}</strong>. Pull the real chart from your PCO library, or generate one with AI.</div>
+      <div style="display:flex;flex-direction:column;gap:.5rem;align-items:center">
+        <button class="chords-gen-btn" data-action="import-pco-chords" data-song-id="${song.id}">
+          <span style="display:inline-flex;width:14px;height:14px">${SVG_CROSS}</span>
+          Import from PCO
+        </button>
+        <button class="chords-gen-btn" data-action="gen-chords" data-song-id="${song.id}" style="background:transparent;border:1px solid var(--line);color:var(--ink-mute)">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 3v4M19 17v4M3 5h4M17 19h4"/><path d="M11.5 8.5L9 11l4 4 2.5-2.5"/><circle cx="12" cy="12" r="9"/></svg>
+          Generate with AI
+        </button>
+      </div>
     </div></div>`;
   }
   const text = chordText || '';
@@ -402,10 +408,15 @@ function addSongFromPreset(result, sourceUrl) {
   const flow = (result.flow || []).filter((f) => f && VALID_TYPES.includes(f.type)).map((f) => ({
     id: uid(), type: f.type, label: f.label || (TAG_LABEL[f.type] || 'Section'),
   }));
+  const keyOf = result.originalKey || 'C';
+  const chords = {};
+  if (result.chordChart && typeof result.chordChart === 'string' && result.chordChart.trim()) {
+    chords[keyOf] = result.chordChart;
+  }
   const newSong = {
     id: uid(), title: result.title || 'New Song', artist: result.artist || null,
-    keyOf: result.originalKey || 'C', bpm: result.bpm || null,
-    flow, chords: {}, view: 'flow',
+    keyOf, bpm: result.bpm || null,
+    flow, chords, view: 'flow',
   };
   if (sourceUrl) {
     if (sourceUrl.includes('spotify.com')) newSong.spotifyUrl = sourceUrl;
@@ -415,6 +426,9 @@ function addSongFromPreset(result, sourceUrl) {
   if (result.youtubeUrl && !newSong.youtubeUrl) newSong.youtubeUrl = result.youtubeUrl;
   state.songs.push(newSong);
   saveState(); render();
+  if (chords[keyOf]) {
+    saveChordSheet(newSong.id, keyOf, chords[keyOf]).catch((e) => console.error('[song-flow] chord save failed', e));
+  }
   showToast(`${newSong.title} added`);
   setTimeout(() => { document.getElementById(`song-${newSong.id}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' }); }, 60);
 }
@@ -1073,6 +1087,95 @@ async function generateChords(songId, force) {
   }
 }
 
+// ---------- Import Chord Sheet from PCO ----------
+let pcoChordCachedResults = [];
+
+function openImportPCOChordsSheet(songId) {
+  const song = findSong(songId); if (!song) return;
+  setSheet(`
+    <div class="sheet-title">Import Chord Chart from PCO</div>
+    <div class="sheet-sub">Find this song in your Planning Center library and pull its chord chart.</div>
+    <div class="search-row">
+      <input class="field-input" id="pco-chord-search" type="text" placeholder="Search PCO…" autocomplete="off">
+      <button class="search-btn" id="pco-chord-do-search">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.35-4.35"/></svg>Find
+      </button>
+    </div>
+    <div class="search-hint">
+      <span style="display:inline-flex;width:11px;height:11px;opacity:.7">${SVG_CROSS}</span>
+      Chart imports in PCO's original key — you can edit it after.
+    </div>
+    <div id="pco-chord-result" style="margin-top:.75rem"></div>
+    <button class="sheet-cancel" data-close>Cancel</button>
+  `);
+  const input = document.getElementById('pco-chord-search');
+  input.value = song.title || '';
+  const trigger = async () => {
+    const q = input.value.trim();
+    if (!q) return;
+    const resultEl = document.getElementById('pco-chord-result');
+    resultEl.innerHTML = `<div class="search-loading"><span class="spinner"></span>Searching PCO…</div>`;
+    try {
+      const { results } = await searchPCO({ query: q });
+      pcoChordCachedResults = Array.isArray(results) ? results : [];
+      renderPCOChordResults(songId);
+    } catch (e) {
+      console.error(e);
+      pcoChordCachedResults = [];
+      resultEl.innerHTML = `<div class="search-empty">Couldn't reach PCO. Check your connection and try again.</div>`;
+    }
+  };
+  document.getElementById('pco-chord-do-search').addEventListener('click', trigger);
+  input.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); trigger(); } });
+  openSheetEl();
+  setTimeout(() => { input.focus(); input.select(); trigger(); }, 120);
+}
+
+function renderPCOChordResults(songId) {
+  const resultEl = document.getElementById('pco-chord-result');
+  if (!resultEl) return;
+  const results = pcoChordCachedResults;
+  if (!results.length) {
+    resultEl.innerHTML = `<div class="search-empty">No matches in your PCO library. Try a different name.</div>`;
+    return;
+  }
+  resultEl.innerHTML = results.map((r, i) => {
+    const hasChart = !!r.chordChart;
+    return `
+      <div class="song-preview" style="margin-bottom:.65rem">
+        <div class="preview-top">
+          <div class="preview-icon">${SVG_CROSS}</div>
+          <div class="preview-meta">
+            <div class="preview-title">${escapeHtml(r.title)}</div>
+            <div class="preview-artist">${escapeHtml(r.artist || 'Unknown author')}</div>
+            <div class="preview-stats">
+              ${r.originalKey ? `<span class="pill">Key ${escapeHtml(r.originalKey)}</span>` : ''}
+              <span class="pill" style="${hasChart ? '' : 'opacity:.5'}">${hasChart ? 'Chart available' : 'No chart uploaded'}</span>
+            </div>
+          </div>
+        </div>
+        <button class="preview-add" data-action="accept-pco-chords" data-pco-idx="${i}" data-song-id="${songId}" ${hasChart ? '' : 'disabled style="opacity:.5;cursor:not-allowed"'}>Use This Chart</button>
+      </div>`;
+  }).join('');
+}
+
+async function applyPCOChordsToSong(songId, result) {
+  const song = findSong(songId);
+  if (!song || !result || !result.chordChart) return;
+  const targetKey = result.originalKey || song.keyOf;
+  if (!song.chords) song.chords = {};
+  song.chords[targetKey] = result.chordChart;
+  if (result.originalKey && result.originalKey !== song.keyOf) {
+    song.keyOf = result.originalKey;
+  }
+  saveState(); render();
+  try { await saveChordSheet(song.id, targetKey, result.chordChart); }
+  catch (e) { console.error('[song-flow] chord save failed', e); }
+  closeSheet();
+  showToast('Chord chart imported from PCO');
+  setTimeout(() => setSongView(songId, 'chords'), 60);
+}
+
 // ---------- Toast ----------
 let toastT;
 function showToast(msg) {
@@ -1103,6 +1206,13 @@ function handleClick(e) {
     case 'delete-row': deleteRow(t.closest('.flow').dataset.songId, t.closest('.flow-row').dataset.rowId); break;
     case 'set-view': setSongView(songId, t.dataset.view); break;
     case 'gen-chords': generateChords(songId, t.dataset.force === '1'); break;
+    case 'import-pco-chords': openImportPCOChordsSheet(songId); break;
+    case 'accept-pco-chords': {
+      const idx = parseInt(t.dataset.pcoIdx, 10);
+      const sid = t.dataset.songId;
+      applyPCOChordsToSong(sid, pcoChordCachedResults[idx]);
+      break;
+    }
     case 'toggle-chord-edit': toggleChordEdit(songId); break;
     case 'open-library': openLibrarySheet(); break;
     case 'load-set': loadSetlistById(t.dataset.setId); break;
