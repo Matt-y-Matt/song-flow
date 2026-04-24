@@ -1193,6 +1193,10 @@ function renderPCOChordResults(songId) {
   }
   resultEl.innerHTML = results.map((r, i) => {
     const hasChart = !!r.chordChart;
+    const hasChords = r.hasChords === true;
+    const chartLabel = !hasChart ? 'No chart uploaded'
+      : hasChords ? 'Chart w/ chords'
+      : 'Lyrics only (no chords)';
     return `
       <div class="song-preview" style="margin-bottom:.65rem">
         <div class="preview-top">
@@ -1202,7 +1206,7 @@ function renderPCOChordResults(songId) {
             <div class="preview-artist">${escapeHtml(r.artist || 'Unknown author')}</div>
             <div class="preview-stats">
               ${r.originalKey ? `<span class="pill">Key ${escapeHtml(r.originalKey)}</span>` : ''}
-              <span class="pill" style="${hasChart ? '' : 'opacity:.5'}">${hasChart ? 'Chart available' : 'No chart uploaded'}</span>
+              <span class="pill" style="${hasChart && hasChords ? '' : 'opacity:.55'}">${chartLabel}</span>
             </div>
           </div>
         </div>
@@ -1214,6 +1218,8 @@ function renderPCOChordResults(songId) {
 async function applyPCOChordsToSong(songId, result) {
   const song = findSong(songId);
   if (!song || !result || !result.chordChart) return;
+  console.log('[song-flow] PCO raw chart source=%s hasChords=%s len=%d', result.chordSource, result.hasChords, result.chordChart.length);
+  console.log('[song-flow] PCO raw chart content:\n' + result.chordChart);
   const chart = normalizeChordChart(result.chordChart);
   if (!chart) return;
   const targetKey = result.originalKey || song.keyOf;

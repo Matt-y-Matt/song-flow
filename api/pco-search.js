@@ -143,6 +143,8 @@ export default async function handler(req, res) {
       let bpm = null;
       let flow = [];
       let chordChart = null;
+      let chordSource = null;
+      let hasChords = false;
 
       try {
         const arr = await fetchArrangement(song.id, pcoHeaders);
@@ -154,8 +156,16 @@ export default async function handler(req, res) {
           flow = seq
             .filter((label) => label != null && String(label).trim())
             .map((label) => ({ type: mapSectionType(label), label: String(label).trim() }));
-          if (typeof a.chord_chart === 'string' && a.chord_chart.trim()) {
+          hasChords = a.has_chords === true;
+          // Prefer chord_chart_chord_pro — canonical ChordPro with inline
+          // brackets that our client normalizer understands. Fall back to
+          // chord_chart (raw text as stored by the church).
+          if (typeof a.chord_chart_chord_pro === 'string' && a.chord_chart_chord_pro.trim()) {
+            chordChart = a.chord_chart_chord_pro;
+            chordSource = 'chord_chart_chord_pro';
+          } else if (typeof a.chord_chart === 'string' && a.chord_chart.trim()) {
             chordChart = a.chord_chart;
+            chordSource = 'chord_chart';
           }
         }
       } catch (err) {
@@ -171,6 +181,8 @@ export default async function handler(req, res) {
         youtubeUrl: null,
         flow,
         chordChart,
+        chordSource,
+        hasChords,
         source: 'pco',
         pcoId: song.id,
       };
