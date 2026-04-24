@@ -167,6 +167,73 @@ function chartHasChords(text) {
   return text.split(/\r?\n/).some((l) => CHORD_LINE_RE.test(l));
 }
 
+// ---- Transposition ----
+const NOTE_TO_SEMI = {
+  'C': 0, 'C#': 1, 'Db': 1,
+  'D': 2, 'D#': 3, 'Eb': 3,
+  'E': 4, 'Fb': 4,
+  'F': 5, 'E#': 5,
+  'F#': 6, 'Gb': 6,
+  'G': 7, 'G#': 8, 'Ab': 8,
+  'A': 9, 'A#': 10, 'Bb': 10,
+  'B': 11, 'Cb': 11,
+};
+const SEMI_TO_SHARP = ['C','C♯','D','D♯','E','F','F♯','G','G♯','A','A♯','B'];
+const SEMI_TO_FLAT  = ['C','D♭','D','E♭','E','F','G♭','G','A♭','A','B♭','B'];
+const FLAT_KEY_ROOTS  = new Set(['F','Bb','Eb','Ab','Db','Gb','Cb','Dm','Gm','Cm','Fm','Bbm','Ebm','Abm']);
+const SHARP_KEY_ROOTS = new Set(['G','D','A','E','B','F#','C#','Em','Bm','F#m','C#m','G#m','D#m','A#m']);
+
+function asciiKey(k) {
+  return String(k || '').trim().replace(/[♯]/g, '#').replace(/[♭]/g, 'b');
+}
+function rootOfKey(k) {
+  const s = asciiKey(k);
+  const m = s.match(/^([A-G][#b]?)/);
+  return m ? m[1] : null;
+}
+function keyAccidentalPref(k) {
+  const s = asciiKey(k);
+  if (FLAT_KEY_ROOTS.has(s)) return 'flat';
+  if (SHARP_KEY_ROOTS.has(s)) return 'sharp';
+  const root = rootOfKey(s);
+  if (root && root.includes('b')) return 'flat';
+  if (root && root.includes('#')) return 'sharp';
+  return 'sharp';
+}
+function semiDeltaBetween(fromKey, toKey) {
+  const f = NOTE_TO_SEMI[rootOfKey(fromKey)];
+  const t = NOTE_TO_SEMI[rootOfKey(toKey)];
+  if (f == null || t == null) return null;
+  return ((t - f) % 12 + 12) % 12;
+}
+function transposeNote(noteAscii, delta, pref) {
+  const semi = NOTE_TO_SEMI[noteAscii];
+  if (semi == null) return noteAscii;
+  const next = ((semi + delta) % 12 + 12) % 12;
+  return (pref === 'flat' ? SEMI_TO_FLAT : SEMI_TO_SHARP)[next];
+}
+
+// Transpose only lines that look like chord lines. Lyric and section lines are
+// left untouched so we never accidentally mutate lyrics that share a letter
+// with a note name (e.g. lines starting with "A" or "Be").
+function transposeChart(text, fromKey, toKey) {
+  if (!text || !fromKey || !toKey) return text;
+  const delta = semiDeltaBetween(fromKey, toKey);
+  if (delta == null || delta === 0) return text;
+  const pref = keyAccidentalPref(toKey);
+
+  const chordTokenRE = /([A-G][#b♯♭]?)([a-zA-Z0-9°øΔ+()]*)(\/([A-G][#b♯♭]?))?/g;
+
+  return text.split('\n').map((line) => {
+    if (!CHORD_LINE_RE.test(line)) return line;
+    return line.replace(chordTokenRE, (match, root, quality, slashGroup, bass) => {
+      const r = transposeNote(asciiKey(root), delta, pref);
+      const b = bass ? '/' + transposeNote(asciiKey(bass), delta, pref) : '';
+      return r + (quality || '') + b;
+    });
+  }).join('\n');
+}
+
 function renderChordsView(song) {
   const chordText = song.chords?.[song.keyOf];
   const editing = chordEdit.editing.has(song.id);
@@ -1191,12 +1258,17 @@ function renderPCOChordResults(songId) {
     resultEl.innerHTML = `<div class="search-empty">No matches in your PCO library. Try a different name.</div>`;
     return;
   }
+  const song = findSong(songId);
+  const targetKey = song?.keyOf || '';
   resultEl.innerHTML = results.map((r, i) => {
     const hasChart = !!r.chordChart;
     const hasChords = r.hasChords === true;
     const chartLabel = !hasChart ? 'No chart uploaded'
       : hasChords ? 'Chart w/ chords'
       : 'Lyrics only (no chords)';
+    const transposeHint = (hasChart && hasChords && r.originalKey && targetKey && r.originalKey !== targetKey)
+      ? `<span class="pill" style="background:var(--bg-2);color:var(--gold)">→ ${escapeHtml(targetKey)}</span>`
+      : '';
     return `
       <div class="song-preview" style="margin-bottom:.65rem">
         <div class="preview-top">
@@ -1207,9 +1279,16 @@ function renderPCOChordResults(songId) {
             <div class="preview-stats">
               ${r.originalKey ? `<span class="pill">Key ${escapeHtml(r.originalKey)}</span>` : ''}
               <span class="pill" style="${hasChart && hasChords ? '' : 'opacity:.55'}">${chartLabel}</span>
+              ${transposeHint}
             </div>
           </div>
         </div>
+        ${hasChart ? `
+          <details style="margin:.5rem 0" data-raw-details="${i}">
+            <summary style="cursor:pointer;font-family:'JetBrains Mono',monospace;font-size:.6rem;letter-spacing:.18em;text-transform:uppercase;color:var(--ink-mute)">Preview raw PCO text</summary>
+            <pre style="margin:.4rem 0 0;padding:.6rem;background:var(--bg-2);border:1px solid var(--line);border-radius:6px;font-size:.68rem;line-height:1.4;max-height:220px;overflow:auto;white-space:pre-wrap;word-break:break-word;color:var(--ink)">${escapeHtml(r.chordChart.slice(0, 1200))}${r.chordChart.length > 1200 ? `\n…(+${r.chordChart.length - 1200} chars)` : ''}</pre>
+          </details>
+        ` : ''}
         <button class="preview-add" data-action="accept-pco-chords" data-pco-idx="${i}" data-song-id="${songId}" ${hasChart ? '' : 'disabled style="opacity:.5;cursor:not-allowed"'}>Use This Chart</button>
       </div>`;
   }).join('');
@@ -1219,20 +1298,35 @@ async function applyPCOChordsToSong(songId, result) {
   const song = findSong(songId);
   if (!song || !result || !result.chordChart) return;
   console.log('[song-flow] PCO raw chart source=%s hasChords=%s len=%d', result.chordSource, result.hasChords, result.chordChart.length);
-  console.log('[song-flow] PCO raw chart content:\n' + result.chordChart);
-  const chart = normalizeChordChart(result.chordChart);
-  if (!chart) return;
-  const targetKey = result.originalKey || song.keyOf;
+  const normalized = normalizeChordChart(result.chordChart);
+  if (!normalized) return;
+
+  // Keep the user's chosen key for this song — transpose PCO's chart to match
+  // rather than overriding song.keyOf. Falls back to PCO's key only when the
+  // song was literally just created and we have no better signal.
+  const fromKey = result.originalKey;
+  const targetKey = song.keyOf || fromKey || 'C';
+  const delta = fromKey ? semiDeltaBetween(fromKey, targetKey) : null;
+  const transposed = (fromKey && delta != null && delta !== 0)
+    ? transposeChart(normalized, fromKey, targetKey)
+    : normalized;
+
   if (!song.chords) song.chords = {};
-  song.chords[targetKey] = chart;
-  if (result.originalKey && result.originalKey !== song.keyOf) {
-    song.keyOf = result.originalKey;
-  }
+  song.chords[targetKey] = transposed;
   saveState(); render();
-  try { await saveChordSheet(song.id, targetKey, chart); }
+  try { await saveChordSheet(song.id, targetKey, transposed); }
   catch (e) { console.error('[song-flow] chord save failed', e); }
   closeSheet();
-  showToast(chartHasChords(chart) ? 'Chord chart imported from PCO' : 'Imported — PCO arrangement has lyrics only, add chords via Edit');
+
+  let msg;
+  if (!chartHasChords(transposed)) {
+    msg = 'Imported — PCO arrangement has lyrics only, add chords via Edit';
+  } else if (fromKey && fromKey !== targetKey) {
+    msg = `Imported from PCO · transposed ${fromKey} → ${targetKey}`;
+  } else {
+    msg = 'Chord chart imported from PCO';
+  }
+  showToast(msg);
   setTimeout(() => setSongView(songId, 'chords'), 60);
 }
 
