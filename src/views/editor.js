@@ -115,6 +115,58 @@ function renderChordSheetText(text) {
     .replace(/^([A-G][b♭#♯]?(?:m|maj|min|sus|aug|dim|add)?\d?(?:\/[A-G][b♭#♯]?)?(\s+[A-G][b♭#♯]?(?:m|maj|min|sus|aug|dim|add)?\d?(?:\/[A-G][b♭#♯]?)?)*)\s*$/gm, '<span class="chord">$1</span>');
 }
 
+// PCO stores chord charts in ChordPro-ish formats: inline [G] brackets inside
+// lyric lines, plus {directive} lines for sections/metadata. Our renderer
+// expects chord lines above lyric lines, so flatten on import.
+function normalizeChordChart(text) {
+  if (!text || typeof text !== 'string') return '';
+  const lines = text.split(/\r?\n/);
+  const out = [];
+  for (const raw of lines) {
+    const dir = raw.match(/^\s*\{([a-z_]+)(?:\s*:\s*(.*?))?\s*\}\s*$/i);
+    if (dir) {
+      const key = dir[1].toLowerCase();
+      const val = (dir[2] || '').trim();
+      if (key === 'soc' || key === 'start_of_chorus') { out.push('[Chorus]'); continue; }
+      if (key === 'sov' || key === 'start_of_verse')  { out.push('[Verse]');  continue; }
+      if (key === 'sob' || key === 'start_of_bridge') { out.push('[Bridge]'); continue; }
+      if (key === 'c' || key === 'ci' || key === 'comment' || key === 'comment_italic') {
+        if (val) out.push(`[${val}]`);
+        continue;
+      }
+      continue; // swallow end_of_*, title, artist, key, tempo, etc.
+    }
+    const hasInlineChord = /\[[A-G][^\]]*\]/.test(raw);
+    const isSectionBracket = /^\s*\[[^\]]+\]\s*$/.test(raw);
+    if (hasInlineChord && !isSectionBracket) {
+      let chordLine = '';
+      let lyricLine = '';
+      const re = /\[([^\]]+)\]/g;
+      let last = 0, m;
+      while ((m = re.exec(raw)) !== null) {
+        const before = raw.slice(last, m.index);
+        lyricLine += before;
+        while (chordLine.length < lyricLine.length) chordLine += ' ';
+        chordLine += m[1];
+        last = re.lastIndex;
+      }
+      lyricLine += raw.slice(last);
+      if (chordLine.trim()) out.push(chordLine.replace(/\s+$/, ''));
+      if (lyricLine.trim()) out.push(lyricLine);
+      if (!chordLine.trim() && !lyricLine.trim()) out.push('');
+      continue;
+    }
+    out.push(raw);
+  }
+  return out.join('\n').replace(/\n{3,}/g, '\n\n').trim();
+}
+
+const CHORD_LINE_RE = /^\s*[A-G][b♭#♯]?(?:m|maj|min|sus|aug|dim|add)?\d?(?:\/[A-G][b♭#♯]?)?(\s+[A-G][b♭#♯]?(?:m|maj|min|sus|aug|dim|add)?\d?(?:\/[A-G][b♭#♯]?)?)*\s*$/;
+function chartHasChords(text) {
+  if (!text) return false;
+  return text.split(/\r?\n/).some((l) => CHORD_LINE_RE.test(l));
+}
+
 function renderChordsView(song) {
   const chordText = song.chords?.[song.keyOf];
   const editing = chordEdit.editing.has(song.id);
@@ -144,6 +196,7 @@ function renderChordsView(song) {
       <div class="chords-actions">
         <span class="chord-save-indicator" id="chord-save-${song.id}" style="font-family:'JetBrains Mono',monospace;font-size:.58rem;letter-spacing:.18em;text-transform:uppercase;color:${statusColor}">${statusLabels[status] || ''}</span>
         <button class="chords-action-btn" data-action="toggle-chord-edit" data-song-id="${song.id}" aria-label="${editing ? 'Done editing' : 'Edit chord sheet'}" title="${editing ? 'Done editing' : 'Edit chord sheet'}">${SVG_PEN} ${editing ? 'Done' : 'Edit'}</button>
+        ${!editing ? `<button class="chords-action-btn" data-action="import-pco-chords" data-song-id="${song.id}" title="Replace with chart from PCO"><span style="display:inline-flex;width:12px;height:12px">${SVG_CROSS}</span> PCO</button>` : ''}
         ${!editing ? `<button class="chords-action-btn" data-action="gen-chords" data-song-id="${song.id}" data-force="1">${SVG_REFRESH} Regenerate</button>` : ''}
       </div>
     </div>
@@ -410,9 +463,8 @@ function addSongFromPreset(result, sourceUrl) {
   }));
   const keyOf = result.originalKey || 'C';
   const chords = {};
-  if (result.chordChart && typeof result.chordChart === 'string' && result.chordChart.trim()) {
-    chords[keyOf] = result.chordChart;
-  }
+  const normalizedChart = normalizeChordChart(result.chordChart || '');
+  if (normalizedChart) chords[keyOf] = normalizedChart;
   const newSong = {
     id: uid(), title: result.title || 'New Song', artist: result.artist || null,
     keyOf, bpm: result.bpm || null,
@@ -1162,17 +1214,19 @@ function renderPCOChordResults(songId) {
 async function applyPCOChordsToSong(songId, result) {
   const song = findSong(songId);
   if (!song || !result || !result.chordChart) return;
+  const chart = normalizeChordChart(result.chordChart);
+  if (!chart) return;
   const targetKey = result.originalKey || song.keyOf;
   if (!song.chords) song.chords = {};
-  song.chords[targetKey] = result.chordChart;
+  song.chords[targetKey] = chart;
   if (result.originalKey && result.originalKey !== song.keyOf) {
     song.keyOf = result.originalKey;
   }
   saveState(); render();
-  try { await saveChordSheet(song.id, targetKey, result.chordChart); }
+  try { await saveChordSheet(song.id, targetKey, chart); }
   catch (e) { console.error('[song-flow] chord save failed', e); }
   closeSheet();
-  showToast('Chord chart imported from PCO');
+  showToast(chartHasChords(chart) ? 'Chord chart imported from PCO' : 'Imported — PCO arrangement has lyrics only, add chords via Edit');
   setTimeout(() => setSongView(songId, 'chords'), 60);
 }
 
