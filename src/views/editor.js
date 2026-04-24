@@ -1176,32 +1176,79 @@ function toggleChordEdit(songId) {
 }
 
 // ---------- AI Chord Sheet ----------
-async function generateChords(songId, force) {
+const CHORD_SOURCES = [
+  { id: 'auto',            label: 'Auto — try any reputable site',   sub: 'Best chance of finding the song' },
+  { id: 'essential',       label: 'Essential Worship',                sub: 'essentialworship.com' },
+  { id: 'ultimate',        label: 'Ultimate Guitar',                  sub: 'ultimate-guitar.com' },
+  { id: 'worshipchords',   label: 'Worship Chords',                   sub: 'worshipchords.com' },
+  { id: 'worshiptogether', label: 'Worship Together',                 sub: 'worshiptogether.com' },
+  { id: 'praisecharts',    label: 'PraiseCharts',                     sub: 'praisecharts.com' },
+];
+
+function generateChords(songId, force) {
   const song = findSong(songId); if (!song) return;
   if (!force && song.chords?.[song.keyOf]) {
     setSongView(songId, 'chords');
     return;
   }
+  openChordSourceSheet(songId);
+}
+
+function openChordSourceSheet(songId) {
+  const song = findSong(songId); if (!song) return;
+  const buttons = CHORD_SOURCES.map((s) => `
+    <button class="sheet-secondary chord-source-pick" data-source="${s.id}" style="display:flex;flex-direction:column;align-items:flex-start;gap:.2rem;padding:.85rem 1rem;text-align:left;width:100%;margin-bottom:.4rem">
+      <span style="font-size:.85rem;color:var(--ink)">${escapeHtml(s.label)}</span>
+      <span style="font-size:.65rem;letter-spacing:.06em;color:var(--ink-mute)">${escapeHtml(s.sub)}</span>
+    </button>
+  `).join('');
+  setSheet(`
+    <div class="sheet-title">Find Chord Chart</div>
+    <div class="sheet-sub">Search the web for <strong style="color:var(--ink)">${escapeHtml(song.title)}</strong>${song.artist ? ` by ${escapeHtml(song.artist)}` : ''} in the key of <strong style="color:var(--gold)">${escapeHtml(song.keyOf)}</strong></div>
+    <div style="margin-top:.75rem">${buttons}</div>
+    <button class="sheet-cancel" data-close>Cancel</button>
+  `);
+  document.querySelectorAll('.chord-source-pick').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const src = btn.dataset.source;
+      closeSheet();
+      runChordGeneration(songId, src);
+    });
+  });
+  openSheetEl();
+}
+
+async function runChordGeneration(songId, source) {
+  const song = findSong(songId); if (!song) return;
+  const sourceLabel = (CHORD_SOURCES.find((s) => s.id === source) || CHORD_SOURCES[0]).label;
   const pane = document.querySelector(`#song-${songId} .view-chords`);
-  if (pane) pane.innerHTML = `<div class="chords-pane"><div class="chords-loading"><span class="spinner"></span>Generating chord sheet in ${escapeHtml(song.keyOf)}…</div></div>`;
+  if (pane) pane.innerHTML = `<div class="chords-pane"><div class="chords-loading"><span class="spinner"></span>Searching ${escapeHtml(sourceLabel)} for ${escapeHtml(song.keyOf)} chord chart…<div style="font-size:.6rem;letter-spacing:.18em;color:var(--ink-mute);margin-top:.5rem">This can take 20–40 seconds</div></div></div>`;
   setSongView(songId, 'chords');
 
   try {
-    const { content } = await generateChordSheet({
-      title: song.title, artist: song.artist || '', keyOf: song.keyOf, flow: song.flow,
+    const { content, notFound } = await generateChordSheet({
+      title: song.title, artist: song.artist || '', keyOf: song.keyOf, flow: song.flow, source,
     });
+    if (notFound || !content) {
+      const pane2 = document.querySelector(`#song-${songId} .view-chords`);
+      if (pane2) pane2.innerHTML = `<div class="chords-pane"><div class="chords-empty">
+        <div class="msg">Couldn't find a published chart on <strong>${escapeHtml(sourceLabel)}</strong>. Try another source or import from PCO.</div>
+        <button class="chords-gen-btn" data-action="gen-chords" data-song-id="${songId}" data-force="1">Pick a different source</button>
+      </div></div>`;
+      return;
+    }
     if (!song.chords) song.chords = {};
     song.chords[song.keyOf] = content;
     try { await saveChordSheet(song.id, song.keyOf, content); } catch (e) { console.error('[song-flow] chord save failed', e); }
     const pane2 = document.querySelector(`#song-${songId} .view-chords`);
     if (pane2) pane2.innerHTML = renderChordsView(song);
-    showToast('Chord sheet ready');
+    showToast(`Chord sheet pulled from ${sourceLabel}`);
   } catch (e) {
     console.error(e);
     const pane2 = document.querySelector(`#song-${songId} .view-chords`);
     if (pane2) pane2.innerHTML = `<div class="chords-pane"><div class="chords-empty">
       <div class="msg" style="color:var(--danger)">Couldn't generate chord sheet. Try again in a moment.</div>
-      <button class="chords-gen-btn" data-action="gen-chords" data-song-id="${songId}">Try Again</button>
+      <button class="chords-gen-btn" data-action="gen-chords" data-song-id="${songId}" data-force="1">Try Again</button>
     </div></div>`;
   }
 }

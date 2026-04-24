@@ -21,6 +21,6 @@ export async function searchPCO({ query }) {
   return postJSON('/api/pco-search', { query });
 }
 
-export async function generateChordSheet({ title, artist, keyOf, flow }) {
-  return postJSON('/api/claude-chords', { title, artist, keyOf, flow });
+export async function generateChordSheet({ title, artist, keyOf, flow, source }) {
+  return postJSON('/api/claude-chords', { title, artist, keyOf, flow, source: source || 'auto' });
 }
