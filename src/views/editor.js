@@ -430,14 +430,45 @@ function initObserver() {
   songs.forEach((s) => io.observe(s));
 }
 
+// Flow and Chords panes sit side-by-side in a horizontal scroll container for
+// the swipe gesture. Without this, the container takes the height of the
+// TALLEST pane (chord chart) even when the user is looking at Flow, leaving a
+// giant blank gap under short flow lists. Sync the container's height to the
+// currently-active pane's natural height instead.
+function syncSongViewHeight(views) {
+  if (!views) return;
+  const songId = views.dataset.songId;
+  const song = findSong(songId); if (!song) return;
+  const view = song.view || 'flow';
+  const active = views.querySelector(`.song-view.view-${view}`);
+  if (active) views.style.height = active.scrollHeight + 'px';
+}
+function syncAllSongViewHeights() {
+  document.querySelectorAll('.song-views').forEach(syncSongViewHeight);
+}
+const songViewResizeObserver = typeof ResizeObserver !== 'undefined'
+  ? new ResizeObserver((entries) => {
+      const seen = new Set();
+      entries.forEach((e) => {
+        const views = e.target.closest('.song-views');
+        if (views && !seen.has(views)) { seen.add(views); syncSongViewHeight(views); }
+      });
+    })
+  : null;
+
 function initSongViews() {
+  if (songViewResizeObserver) songViewResizeObserver.disconnect();
   document.querySelectorAll('.song-views').forEach((views) => {
     const songId = views.dataset.songId;
     const song = findSong(songId); if (!song) return;
     requestAnimationFrame(() => {
       const target = views.querySelector(`[data-view="${song.view || 'flow'}"]`);
       if (target) views.scrollLeft = target.offsetLeft;
+      syncSongViewHeight(views);
     });
+    if (songViewResizeObserver) {
+      views.querySelectorAll('.song-view').forEach((pane) => songViewResizeObserver.observe(pane));
+    }
     let scrollT;
     views.addEventListener('scroll', () => {
       clearTimeout(scrollT);
@@ -450,6 +481,7 @@ function initSongViews() {
           const songEl = views.closest('.song');
           songEl.querySelectorAll('.view-tab').forEach((t) => t.classList.toggle('active', t.dataset.view === newView));
           saveState();
+          syncSongViewHeight(views);
         }
       }, 120);
     });
@@ -463,6 +495,7 @@ function setSongView(songId, view) {
   if (views) {
     const target = views.querySelector(`[data-view="${view}"]`);
     if (target) views.scrollTo({ left: target.offsetLeft, behavior: 'smooth' });
+    syncSongViewHeight(views);
   }
   document.querySelectorAll(`#song-${songId} .view-tab`).forEach((t) => t.classList.toggle('active', t.dataset.view === view));
   saveState();

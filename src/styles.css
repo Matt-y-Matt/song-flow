@@ -99,9 +99,9 @@ h1 em{font-style:italic;font-weight:400;color:var(--gold);font-variation-setting
 .view-tab svg{width:11px;height:11px}
 
 /* SWIPE VIEWS */
-.song-views{display:flex;overflow-x:auto;scroll-snap-type:x mandatory;scroll-behavior:smooth;-webkit-overflow-scrolling:touch;scrollbar-width:none}
+.song-views{display:flex;overflow-x:auto;overflow-y:hidden;scroll-snap-type:x mandatory;scroll-behavior:smooth;-webkit-overflow-scrolling:touch;scrollbar-width:none;transition:height .18s ease}
 .song-views::-webkit-scrollbar{display:none}
-.song-view{flex:0 0 100%;scroll-snap-align:start;min-width:0}
+.song-view{flex:0 0 100%;scroll-snap-align:start;min-width:0;align-self:flex-start}
 
 /* TRANSITION */
 .transition{display:flex;align-items:center;gap:.6rem;padding:.55rem .9rem;margin:-.5rem auto 1rem;width:fit-content;max-width:calc(100% - 2rem);background:linear-gradient(135deg,rgba(217,138,122,0.12),rgba(212,165,116,0.08));border:1px solid rgba(217,138,122,0.3);border-radius:999px;font-family:'JetBrains Mono',monospace;font-size:.65rem;font-weight:500;letter-spacing:.15em;text-transform:uppercase;color:var(--rose);position:relative;z-index:2;cursor:pointer;transition:transform .15s}
