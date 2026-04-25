@@ -1,6 +1,8 @@
 {
   "rewrites": [
     { "source": "/api/(.*)", "destination": "/api/" },
+    { "source": "/coffee", "destination": "/coffee.html" },
+    { "source": "/coffee/(.*)", "destination": "/coffee.html" },
     { "source": "/(.*)", "destination": "/index.html" }
   ],
   "buildCommand": "npm run build",

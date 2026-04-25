@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <meta name="theme-color" content="#3b2412" />
+  <title>Bean Finder — Coffee near you</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+        integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
+  <link rel="stylesheet" href="/src/coffee/coffee.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <span class="logo" aria-hidden="true">☕</span>
+      <span class="title">Bean Finder</span>
+    </div>
+    <div class="controls">
+      <label class="radius">
+        Radius
+        <select id="radius">
+          <option value="500">500 m</option>
+          <option value="1000" selected>1 km</option>
+          <option value="2000">2 km</option>
+          <option value="5000">5 km</option>
+        </select>
+      </label>
+      <button id="locate-btn" class="btn primary" type="button">
+        <span class="btn-icon">📍</span>
+        <span class="btn-label">Use my location</span>
+      </button>
+    </div>
+  </header>
+
+  <main class="layout">
+    <aside class="sidebar" id="sidebar">
+      <div class="sidebar-head">
+        <h2 id="results-title">Nearby coffee</h2>
+        <span id="results-count" class="count"></span>
+      </div>
+      <div id="status" class="status">
+        <p class="status-msg">Tap <strong>Use my location</strong> to find coffee spots near you.</p>
+      </div>
+      <ul id="results" class="results" role="list"></ul>
+    </aside>
+
+    <section class="map-wrap">
+      <div id="map" aria-label="Map of nearby coffee shops"></div>
+      <div id="route-info" class="route-info" hidden>
+        <div class="route-info-row">
+          <strong id="route-name">Route</strong>
+          <button id="clear-route" class="btn ghost small" type="button">Clear</button>
+        </div>
+        <div class="route-stats">
+          <span id="route-distance">—</span>
+          <span class="dot">•</span>
+          <span id="route-duration">—</span>
+          <span class="dot">•</span>
+          <a id="route-external" class="external-link" href="#" target="_blank" rel="noopener">Open in Google Maps</a>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+          integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+  <script type="module" src="/src/coffee/coffee.js"></script>
+</body>
+</html>
