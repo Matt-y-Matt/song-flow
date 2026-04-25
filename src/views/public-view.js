@@ -260,14 +260,37 @@ function initObserver() {
   songs.forEach((s) => io.observe(s));
 }
 
+function syncSongViewHeight(views) {
+  if (!views) return;
+  const songId = views.dataset.songId;
+  const song = findSong(songId); if (!song) return;
+  const view = song.view || 'flow';
+  const active = views.querySelector(`.song-view.view-${view}`);
+  if (active) views.style.height = active.scrollHeight + 'px';
+}
+const songViewResizeObserver = typeof ResizeObserver !== 'undefined'
+  ? new ResizeObserver((entries) => {
+      const seen = new Set();
+      entries.forEach((e) => {
+        const views = e.target.closest('.song-views');
+        if (views && !seen.has(views)) { seen.add(views); syncSongViewHeight(views); }
+      });
+    })
+  : null;
+
 function initSongViews() {
+  if (songViewResizeObserver) songViewResizeObserver.disconnect();
   mount.querySelectorAll('.song-views').forEach((views) => {
     const songId = views.dataset.songId;
     const song = findSong(songId); if (!song) return;
     requestAnimationFrame(() => {
       const target = views.querySelector(`[data-view="${song.view || 'flow'}"]`);
       if (target) views.scrollLeft = target.offsetLeft;
+      syncSongViewHeight(views);
     });
+    if (songViewResizeObserver) {
+      views.querySelectorAll('.song-view').forEach((pane) => songViewResizeObserver.observe(pane));
+    }
     let scrollT;
     views.addEventListener('scroll', () => {
       clearTimeout(scrollT);
@@ -275,8 +298,12 @@ function initSongViews() {
         const w = views.clientWidth;
         const idx = Math.round(views.scrollLeft / w);
         const newView = idx === 0 ? 'flow' : 'chords';
-        const songEl = views.closest('.song');
-        songEl.querySelectorAll('.view-tab').forEach((t) => t.classList.toggle('active', t.dataset.viewTab === newView));
+        if (song.view !== newView) {
+          song.view = newView;
+          const songEl = views.closest('.song');
+          songEl.querySelectorAll('.view-tab').forEach((t) => t.classList.toggle('active', t.dataset.viewTab === newView));
+          syncSongViewHeight(views);
+        }
       }, 120);
     });
   });
@@ -285,9 +312,12 @@ function initSongViews() {
 function setSongView(songId, view) {
   const views = mount.querySelector(`.song-views[data-song-id="${songId}"]`);
   if (!views) return;
+  const song = findSong(songId);
+  if (song) song.view = view;
   const target = views.querySelector(`[data-view="${view}"]`);
   if (target) views.scrollTo({ left: target.offsetLeft, behavior: 'smooth' });
   mount.querySelectorAll(`#song-${songId} .view-tab`).forEach((t) => t.classList.toggle('active', t.dataset.viewTab === view));
+  syncSongViewHeight(views);
 }
 
 function handleClick(e) {
