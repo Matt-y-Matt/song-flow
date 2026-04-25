@@ -240,7 +240,7 @@ function renderChordsView(song) {
   if (!chordText && !editing) {
     return `<div class="chords-pane"><div class="chords-empty">
       <div class="icon">${SVG_CHORDS}</div>
-      <div class="msg">No chord chart yet for the key of <strong style="color:var(--gold)">${escapeHtml(song.keyOf)}</strong>. Pull the real chart from your PCO library, or generate one with AI.</div>
+      <div class="msg">No chord chart yet for the key of <strong style="color:var(--gold)">${escapeHtml(song.keyOf)}</strong>. Pull the real chart from PCO, generate one with AI, or paste your own.</div>
       <div style="display:flex;flex-direction:column;gap:.5rem;align-items:center">
         <button class="chords-gen-btn" data-action="import-pco-chords" data-song-id="${song.id}">
           <span style="display:inline-flex;width:14px;height:14px">${SVG_CROSS}</span>
@@ -249,6 +249,10 @@ function renderChordsView(song) {
         <button class="chords-gen-btn" data-action="gen-chords" data-song-id="${song.id}" style="background:transparent;border:1px solid var(--line);color:var(--ink-mute)">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 3v4M19 17v4M3 5h4M17 19h4"/><path d="M11.5 8.5L9 11l4 4 2.5-2.5"/><circle cx="12" cy="12" r="9"/></svg>
           Generate with AI
+        </button>
+        <button class="chords-gen-btn" data-action="toggle-chord-edit" data-song-id="${song.id}" style="background:transparent;border:1px solid var(--line);color:var(--ink-mute)">
+          ${SVG_PEN}
+          Paste / Type Your Own
         </button>
       </div>
     </div></div>`;
