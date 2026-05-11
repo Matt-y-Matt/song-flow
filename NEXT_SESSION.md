@@ -44,6 +44,30 @@ Verification so far:
 - Production deployment completed and aliased to `https://song-flow-one.vercel.app`.
 - Production login screen renders.
 
+## Automation / Checkpoints
+
+The dedicated automation tool was not exposed in this session, so Google Calendar fallback checkpoints were created:
+
+- 2026-05-12 03:00 SGT to 2026-05-13 10:00 SGT: Song Flow overnight build window.
+- 2026-05-13 10:00 SGT: Song Flow 10am report.
+- 2026-05-13 13:00 SGT: Song Flow midday checkpoint.
+- 2026-05-13 18:00-18:35 SGT: Song Flow final checkpoint before requested end time.
+
+## Phase 2 Setup
+
+Phase 2 Linear project created: [Song Flow Phase 2 Team Sharing](https://linear.app/custore/project/song-flow-phase-2-team-sharing-6ad09aa86303)
+
+Created Phase 2 issues:
+
+- `CUS-48` Define team share modes and permission copy.
+- `CUS-49` Improve public team view rehearsal ergonomics.
+- `CUS-50` Create Phase 2 team sharing spec in repo.
+- `CUS-51` Plan lightweight update awareness for shared views.
+
+Created doc:
+
+- `PHASE_2_SPEC.md`
+
 ## Recommended Build Plan
 
 Phase 1 should be split into focused chats because the app now has real boundaries: frontend editor, public share/RLS, API/search, and docs/deploy verification. Parallel work is useful, but only if each chat owns a narrow file set.
