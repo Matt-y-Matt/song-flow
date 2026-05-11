@@ -5,10 +5,42 @@ Created: 2026-05-11
 ## Current State
 
 - Repo path: `D:\AI\projects\song-flow`
-- Branch during audit: `master`
+- Active work branch: `codex/song-flow-phase-1`
+- Base branch during audit: `master`
 - Build: `npm run build` passes.
 - App is not greenfield. It has a working Vite/Supabase/Vercel structure and most v7 editor behavior.
-- This session produced architecture/spec docs only. No feature code should be mixed into the documentation commit.
+- Linear project: [Song Flow Phase 1 Stabilization](https://linear.app/custore/project/song-flow-phase-1-stabilization-e031ebc6cfb7)
+
+## Latest Phase 1 Progress
+
+Completed commits on `codex/song-flow-phase-1`:
+
+- `be75c1f fix: validate public chord sheet edits`
+  - Added `api/public-chord-sheet.js`.
+  - Public share chord edits now validate `shareToken -> setlist -> song` before server-side upsert.
+  - Share copy now says team chord edits are enabled while setlist structure remains owner-only.
+- `20e9e9a docs: refresh setup and share behavior`
+  - Rewrote README to match actual architecture.
+  - Added PCO credentials to `.env.example`.
+  - Corrected current-stack PCO wording in `PROJECT_BRIEF.md`.
+- `3082aaf fix: harden URL song search`
+  - Hardened Spotify/YouTube source ID extraction.
+  - Debounced pasted URL search and avoided repeat searches for the same URL.
+
+Linear status:
+
+- `CUS-42` Done: share/RLS truth.
+- `CUS-43` Done: README/setup truth.
+- `CUS-44` In Review: core editor smoke. Build and login boot verified; full authenticated Supabase smoke is blocked locally because this workspace has no `.env`.
+- `CUS-45` Done: AI/search/chord reliability.
+- `CUS-46` In Progress: integration/deploy readiness.
+
+Verification so far:
+
+- `npm run build` passes.
+- Local Vite boot verified on the login screen.
+- Browser console only showed the expected missing Supabase env warning.
+- Full signed-in persistence and live AI calls still require real environment variables.
 
 ## Recommended Build Plan
 
