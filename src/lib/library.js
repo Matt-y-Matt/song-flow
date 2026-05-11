@@ -315,6 +315,17 @@ export async function updateChordSheet(songId, keyOf, content) {
   if (error) throw error;
 }
 
+export async function updatePublicChordSheet(shareToken, songId, keyOf, content) {
+  const res = await fetch('/api/public-chord-sheet', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ shareToken, songId, keyOf, content }),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || `Public chord sheet update failed (${res.status})`);
+  return data;
+}
+
 // ---------- Save queue (debounced, per-user) ----------
 let saveTimer = null;
 let pendingState = null;

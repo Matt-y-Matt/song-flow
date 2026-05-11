@@ -1,4 +1,4 @@
-import { getSetlistByShareToken, updateChordSheet } from '../lib/library.js';
+import { getSetlistByShareToken, updatePublicChordSheet } from '../lib/library.js';
 import { signInWithGoogle } from '../lib/auth.js';
 import {
   SVG_SPOTIFY, SVG_YOUTUBE, SVG_PEN, SVG_CAL, SVG_FLOW, SVG_CHORDS,
@@ -7,6 +7,7 @@ import {
 
 let mount = null;
 let state = null;
+let shareToken = null;
 let detachClick = null;
 let detachInput = null;
 
@@ -103,7 +104,7 @@ function scheduleChordSave(songId) {
     chordEdit.timers.delete(songId);
     const value = song.chords?.[song.keyOf] ?? '';
     try {
-      await updateChordSheet(songId, song.keyOf, value);
+      await updatePublicChordSheet(shareToken, songId, song.keyOf, value);
       updateChordSaveIndicator(songId, 'saved');
       setTimeout(() => {
         if (chordEdit.status.get(songId) === 'saved') updateChordSaveIndicator(songId, null);
@@ -137,7 +138,7 @@ function toggleChordEdit(songId) {
       chordEdit.timers.delete(songId);
       const value = song.chords?.[song.keyOf] ?? '';
       updateChordSaveIndicator(songId, 'saving');
-      updateChordSheet(songId, song.keyOf, value)
+      updatePublicChordSheet(shareToken, songId, song.keyOf, value)
         .then(() => {
           updateChordSaveIndicator(songId, 'saved');
           setTimeout(() => {
@@ -217,7 +218,7 @@ function render() {
   mount.innerHTML = `
     <div class="view-banner">
       <div class="view-banner-text">
-        Viewing <strong>${escapeHtml(state.name)}</strong> · Chord edits are shared
+        Viewing <strong>${escapeHtml(state.name)}</strong> · Chord edits sync to the team
       </div>
       <button class="view-banner-btn" data-view-action="signin">Sign in to edit setlist</button>
     </div>
@@ -238,7 +239,7 @@ function render() {
       ${state.songs.length ? '<span>Jump</span>' : ''}
       ${state.songs.map((s, i) => `<a href="#song-${s.id}" data-sid="${s.id}" class="${i === 0 ? 'active' : ''}" aria-label="Song ${i + 1}"></a>`).join('')}
     </nav>
-    <footer><span class="divider"></span>Read-only view · Swipe Flow ↔ Chords</footer>
+    <footer><span class="divider"></span>Team view · Swipe Flow ↔ Chords · Chord edits sync</footer>
   `;
 
   initObserver();
@@ -309,6 +310,7 @@ function handleClick(e) {
 
 export async function initPublicView(token, _mount) {
   mount = _mount;
+  shareToken = token;
   mount.innerHTML = `<div class="boot"><span class="spinner"></span>Loading setlist…</div>`;
   try {
     state = await getSetlistByShareToken(token);
@@ -338,5 +340,6 @@ export async function teardownPublicView() {
   detachInput?.();
   detachClick = null;
   detachInput = null;
+  shareToken = null;
   state = null;
 }

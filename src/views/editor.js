@@ -211,7 +211,7 @@ function render() {
       <button class="lib-btn" data-action="open-library">${SVG_LIBRARY} Setlists <span class="count">${setCount}</span></button>
       <div style="display:flex;gap:.4rem;align-items:center">
         <span id="save-dot" style="font-family:'JetBrains Mono',monospace;font-size:.58rem;letter-spacing:.18em;text-transform:uppercase;color:var(--ink-mute)"></span>
-        <button class="header-btn" data-action="share" title="Share view-only link" aria-label="Share view-only link">${SVG_SHARE}</button>
+        <button class="header-btn" data-action="share" title="Share team link" aria-label="Share team link">${SVG_SHARE}</button>
         <button class="header-btn" data-action="signout" title="Sign out" aria-label="Sign out">${SVG_SIGNOUT}</button>
       </div>
     </div>
@@ -1156,7 +1156,7 @@ async function openShareSheet() {
   if (!state?.id) return;
   setSheet(`
     <div class="sheet-title">Share Setlist</div>
-    <div class="sheet-sub">Read-only link · anyone with the URL can view</div>
+    <div class="sheet-sub">Team link · anyone with the URL can view and edit chord sheets</div>
     <div class="share-loading" id="share-loading"><span class="spinner"></span>Generating link…</div>
   `);
   openSheetEl();
@@ -1165,8 +1165,8 @@ async function openShareSheet() {
     const shareUrl = `https://song-flow-one.vercel.app/view/${token}`;
     setSheet(`
       <div class="sheet-title">Share Setlist</div>
-      <div class="sheet-sub">${escapeHtml(state.name)} · read-only</div>
-      <p class="sheet-text">Anyone with this link can view the setlist. They won't be able to edit anything.</p>
+      <div class="sheet-sub">${escapeHtml(state.name)} · team chord edits enabled</div>
+      <p class="sheet-text">Anyone with this link can view the setlist and edit chord sheets. Setlist structure, keys, BPM, and flow remain owner-only.</p>
       <label class="field-label">Share URL</label>
       <div class="share-row">
         <input class="field-input" id="share-url" type="text" value="${escapeHtml(shareUrl)}" readonly>
