@@ -1,81 +1,132 @@
 # Song Flow
 
-Production worship setlist planner — dark editorial theme, AI-assisted song search and chord sheets, Supabase-backed sync.
+Song Flow is a production worship setlist planner: dark editorial UI, AI-assisted song search and chord sheets, Supabase-backed sync, and share links for worship teams.
 
-Stack: **Vanilla HTML/CSS/JS + Vite** · Auth + DB: **Supabase** · Serverless: **Vercel API Routes (Node 20)** · AI: **Anthropic `claude-sonnet-4-20250514`** via serverless only (API key never touches the browser).
+It is built first for the core worship-planning loop: setlist, song flow, key, BPM, chord sheets, and team sharing. It is not a streaming app or a Planning Center clone.
 
-## Quick start
+## Stack
+
+- Frontend: vanilla HTML/CSS/JS with Vite
+- Auth and database: Supabase
+- Serverless: Vercel API Routes on Node 20
+- AI: Anthropic `claude-haiku-4-5` via serverless routes only
+- Drag/drop: Sortable.js
+- Optional library search: Planning Center Services via server-side personal access credentials
+
+## Quick Start
 
 ```bash
-cp .env.example .env     # fill in all four values
+cp .env.example .env
 npm install
-npm run dev              # Vite only — AI endpoints won't work
-# or
-npx vercel dev           # Vite + Vercel API routes, uses /api/* natively
+npm run dev
 ```
 
-### Environment variables
+`npm run dev` starts Vite only. API routes under `/api/*` require Vercel's local runtime:
 
-| Name | Used by | Notes |
-| --- | --- | --- |
-| `VITE_SUPABASE_URL` | client | Public |
-| `VITE_SUPABASE_ANON_KEY` | client | Public |
-| `SUPABASE_SERVICE_ROLE_KEY` | serverless | Reserved for future admin tasks |
-| `ANTHROPIC_API_KEY` | serverless only | Never exposed to the browser |
+```bash
+npx vercel dev
+```
 
-### Supabase setup
+## Environment Variables
 
-Run `supabase/migrations/0001_init.sql` in your Supabase project (SQL editor). It creates `profiles`, `setlists`, `songs`, `flow_sections`, `chord_sheets`, sets up RLS policies scoped to `auth.uid()`, and wires a trigger that creates a profile row when a user signs up.
+| Name | Used by | Required | Notes |
+| --- | --- | --- | --- |
+| `VITE_SUPABASE_URL` | client + serverless | yes | Public Supabase project URL. Also used by serverless routes that need Supabase. |
+| `VITE_SUPABASE_ANON_KEY` | client | yes | Public Supabase anon key. |
+| `SUPABASE_SERVICE_ROLE_KEY` | serverless | yes for public chord edits | Never expose in browser. Used by `/api/public-chord-sheet` after validating share token and song membership. |
+| `ANTHROPIC_API_KEY` | serverless | yes for AI | Used by `/api/claude-search` and `/api/claude-chords`. |
+| `PCO_CLIENT_ID` | serverless | optional | Planning Center Services personal access token app ID. |
+| `PCO_SECRET` | serverless | optional | Planning Center Services personal access token secret. |
 
-For Google OAuth, enable the Google provider in Supabase Auth → Providers and add your site URL to the redirect allowlist.
+## Supabase Setup
 
-### Deploy (Vercel)
+Run the migrations in order in your Supabase SQL editor:
+
+1. `supabase/migrations/0001_init.sql`
+2. `supabase/migrations/0002_share_tokens.sql`
+
+The schema includes:
+
+- `profiles`
+- `setlists`
+- `songs`
+- `flow_sections`
+- `chord_sheets`
+
+Owner-scoped RLS protects signed-in editing. Share-token policies allow public read access to shared setlists. Public chord-sheet edits do not rely on broad anonymous RLS writes; they go through `/api/public-chord-sheet`, which validates the share token and confirms the song belongs to that shared setlist before upserting the chord sheet with the service role.
+
+For Google OAuth, enable Google in Supabase Auth > Providers and add your site URL to the redirect allowlist.
+
+## Deploy
 
 1. Push this repo to GitHub.
-2. Vercel → New Project → import this repo.
-3. Set the four env vars in Project Settings → Environment Variables.
-4. `vercel.json` declares the build command, output directory, and SPA rewrite; `api/*.js` files are auto-detected as serverless functions.
+2. Import the project in Vercel.
+3. Set the environment variables above.
+4. Deploy.
+
+`vercel.json` declares the build command, output directory, and SPA rewrite. `api/*.js` files are detected as serverless functions.
 
 ## Architecture
 
-```
-index.html ─▶ src/main.js
-                 ├─ getSession() → views/login.js   (signed out)
-                 └─ getSession() → views/editor.js  (signed in)
+```text
+index.html -> src/main.js
+                |-> views/login.js       signed out
+                |-> views/editor.js      signed in
+                |-> views/public-view.js /view/:shareToken
 
 src/lib/
-  supabase.js     — singleton client
-  auth.js         — Google OAuth + magic link + session listener
-  library.js      — CRUD for setlists/songs/flow_sections/chord_sheets, debounced save queue
-  ai.js           — thin wrappers around /api/claude-search and /api/claude-chords
+  supabase.js  singleton browser Supabase client
+  auth.js      Google OAuth, magic link, session listener
+  library.js   setlist CRUD, share tokens, save queue, chord writes
+  ai.js        wrappers around /api/claude-search and /api/claude-chords
 
 src/views/
-  login.js        — dark editorial login
-  editor.js       — port of the v7 editor; drag/drop, swipe tabs, sheets, inline edit
-  editor-shared.js — SVG icons + type/key constants + helpers (escapeHtml, formatDate…)
-  library-sheet.js — setlist library sheet body
+  login.js          sign-in screen
+  editor.js         primary v7-derived setlist editor
+  public-view.js    team share view
+  library-sheet.js  setlist library sheet
+  editor-shared.js  icons, constants, escape/date helpers
 
 api/
-  claude-search.js  — POST {query, sourceUrl} → song preset JSON
-  claude-chords.js  — POST {title, artist, keyOf, flow} → plain-text chord sheet
-  pco-search.js     — stub (returns 401 until Planning Center OAuth is wired)
+  claude-search.js       POST { query, sourceUrl } -> song preset JSON
+  claude-chords.js       POST { title, artist, keyOf, flow } -> chord sheet text
+  pco-search.js          POST { query } -> PCO song results when PCO credentials exist
+  public-chord-sheet.js  POST { shareToken, songId, keyOf, content } -> validated public chord edit
 ```
 
-### Save model
+## Save Model
 
-Save is debounced (~400ms). Each flush does a full-setlist upsert:
+Signed-in editor saves are debounced, about 400ms. Each structural save:
 
-1. Update the `setlists` row.
-2. Diff and delete any songs no longer in state.
-3. Upsert remaining songs (positions, fields).
-4. Delete & reinsert all `flow_sections` for the setlist's songs.
-5. `chord_sheets` are written separately when AI generates a sheet — never touched by structural saves.
+1. Updates the `setlists` row.
+2. Deletes songs removed from the current setlist.
+3. Upserts current songs with position and fields.
+4. Replaces `flow_sections` for the current setlist songs.
 
-Client UUIDs (`crypto.randomUUID()`) are used for all row IDs so client state and DB stay in sync without round-trips.
+Chord sheets are intentionally separate from structural saves:
 
-## Keyboard & gestures
+- AI generation uses `saveChordSheet(songId, keyOf, content)` and updates `generated_at`.
+- Signed-in manual edits use `updateChordSheet(songId, keyOf, content)` and preserve `generated_at`.
+- Public share chord edits use `/api/public-chord-sheet` through `updatePublicChordSheet(...)`.
 
-- Tap a title, label, artist, setlist name → inline edit (Enter saves, Esc cancels).
-- Drag `⋮⋮` handles → reorder sections / songs.
-- Swipe left/right inside a song card → toggle **Flow** ↔ **Chords**.
-- Tap the section tag → cycles through all types.
+Client UUIDs (`crypto.randomUUID()`) are used for row IDs so local state and database rows can stay aligned without extra round trips.
+
+## Core Workflows
+
+- Tap setlist name, song title, artist, or flow label to edit inline.
+- Drag song handles to reorder songs.
+- Drag flow row handles to reorder sections.
+- Tap key or BPM to open editing sheets.
+- Tap Spotify/YouTube icons to open or set links.
+- Swipe within a song card or tap tabs to switch Flow/Chords.
+- Generate chord sheets per song key.
+- Edit chord sheets manually with autosave.
+- Share a team link: anyone with the link can view the setlist and edit chord sheets; setlist structure remains owner-only.
+
+## Product Guardrails
+
+Phase 1 is stabilization:
+
+- Keep the setlist + chord + key + flow loop reliable.
+- Keep PCO and Spotify integrations conservative.
+- Do not expand into OAuth integrations or community arrangement features until the core workflow is excellent.

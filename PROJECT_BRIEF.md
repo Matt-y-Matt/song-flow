@@ -47,7 +47,7 @@ Current stack in repo:
 - Vercel API routes.
 - Anthropic API for AI search/chords.
 - Sortable.js.
-- PCO search stub.
+- Planning Center Services search route, enabled when server-side credentials are configured.
 
 Existing important files:
 
@@ -211,4 +211,3 @@ Song Flow matters because worship planning is recurring, practical, and personal
 The product should save a worship leader from the weekly scramble: "What songs are we doing, what key, what flow, where is the chord sheet, and how do I share it with the team?"
 
 Make the key/chord/flow loop perfect first. Everything else earns its place after that.
-
