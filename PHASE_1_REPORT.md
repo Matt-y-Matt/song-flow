@@ -23,6 +23,7 @@ Commits:
 - `be75c1f fix: validate public chord sheet edits`
 - `20e9e9a docs: refresh setup and share behavior`
 - `3082aaf fix: harden URL song search`
+- `9244945 docs: add phase 1 status report`
 
 Each slice is a separate commit so it can be reverted independently.
 
@@ -43,7 +44,12 @@ Each slice is a separate commit so it can be reverted independently.
 - `npm run build` passes.
 - Local Vite app boots.
 - Login screen renders.
-- Browser console only reports the expected missing Supabase env warning.
+- Production deploy completed:
+  - URL: `https://song-flow-one.vercel.app`
+  - Deployment: `https://song-flow-l545tzax6-cofounder-6147s-projects.vercel.app`
+  - Vercel deployment ID: `dpl_DYEmAcmMy6CKnWnJFKYdKE9ehfKZ`
+- Production login screen renders.
+- Local browser console only reports the expected missing Supabase env warning.
 - UTF-8 music symbols are correct in source when read as UTF-8.
 
 ## Blockers / Risks

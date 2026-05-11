@@ -33,7 +33,7 @@ Linear status:
 - `CUS-43` Done: README/setup truth.
 - `CUS-44` In Review: core editor smoke. Build and login boot verified; full authenticated Supabase smoke is blocked locally because this workspace has no `.env`.
 - `CUS-45` Done: AI/search/chord reliability.
-- `CUS-46` In Progress: integration/deploy readiness.
+- `CUS-46` In Review: integration/deploy readiness.
 
 Verification so far:
 
@@ -41,6 +41,8 @@ Verification so far:
 - Local Vite boot verified on the login screen.
 - Browser console only showed the expected missing Supabase env warning.
 - Full signed-in persistence and live AI calls still require real environment variables.
+- Production deployment completed and aliased to `https://song-flow-one.vercel.app`.
+- Production login screen renders.
 
 ## Recommended Build Plan
 
