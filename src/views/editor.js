@@ -783,18 +783,22 @@ function openAddSongSheet() {
   const trigger = () => doSongSearch(input.value.trim());
   document.getElementById('do-search').addEventListener('click', trigger);
   input.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); trigger(); } });
-  const tryUrl = () => {
+  let lastUrlSearch = '';
+  let urlSearchTimer = null;
+  const tryUrl = ({ force = false } = {}) => {
     const raw = urlInput.value.trim();
     if (!raw) return;
     const link = parseStreamingUrl(raw);
     if (!link) return;
+    if (!force && link.url === lastUrlSearch) return;
+    lastUrlSearch = link.url;
     doSongSearchByUrl(link);
   };
-  urlInput.addEventListener('paste', () => { setTimeout(tryUrl, 0); });
-  urlInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); tryUrl(); } });
+  urlInput.addEventListener('paste', () => { setTimeout(() => tryUrl({ force: true }), 0); });
+  urlInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); tryUrl({ force: true }); } });
   urlInput.addEventListener('input', () => {
-    const raw = urlInput.value.trim();
-    if (parseStreamingUrl(raw)) tryUrl();
+    clearTimeout(urlSearchTimer);
+    urlSearchTimer = setTimeout(() => tryUrl(), 250);
   });
 
   // PCO tab
@@ -855,14 +859,28 @@ function renderPCOResults(results) {
 
 function parseStreamingUrl(raw) {
   if (!raw) return null;
-  const m = raw.match(/https?:\/\/[^\s]+/); if (!m) return null;
-  const url = m[0];
-  const spotifyTrack = url.match(/open\.spotify\.com\/(?:intl-[a-z]{2}\/)?track\/([A-Za-z0-9]+)/);
-  if (spotifyTrack) return { type: 'spotify', url, id: spotifyTrack[1] };
-  const ytLong = url.match(/youtube\.com\/watch\?[^#]*\bv=([A-Za-z0-9_-]{6,})/);
-  if (ytLong) return { type: 'youtube', url, id: ytLong[1] };
-  const ytShort = url.match(/youtu\.be\/([A-Za-z0-9_-]{6,})/);
-  if (ytShort) return { type: 'youtube', url, id: ytShort[1] };
+  const m = raw.match(/https?:\/\/[^\s<>"']+/); if (!m) return null;
+  const url = m[0].replace(/[),.]+$/, '');
+  try {
+    const parsed = new URL(url);
+    const host = parsed.hostname.replace(/^www\./, '').replace(/^m\./, '').replace(/^music\./, '');
+    const parts = parsed.pathname.split('/').filter(Boolean);
+    if (host.endsWith('spotify.com')) {
+      const trackIndex = parts.indexOf('track');
+      const id = trackIndex >= 0 ? parts[trackIndex + 1] : null;
+      if (id) return { type: 'spotify', url, id };
+    }
+    if (host === 'youtu.be' || host.endsWith('youtube.com') || host.endsWith('youtube-nocookie.com')) {
+      const id = host === 'youtu.be'
+        ? parts[0]
+        : parsed.searchParams.get('v') || (
+          ['shorts', 'embed', 'live'].includes(parts[0]) ? parts[1] : null
+        );
+      if (id) return { type: 'youtube', url, id };
+    }
+  } catch {
+    return null;
+  }
   return null;
 }
 

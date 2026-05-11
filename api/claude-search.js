@@ -6,6 +6,40 @@ function stripFences(text) {
   return text.replace(/^```(?:json)?\s*/i, '').replace(/\s*```\s*$/, '').trim();
 }
 
+function extractSourceContext(sourceUrl) {
+  if (!sourceUrl) return { isSpotify: false, isYoutube: false, idContext: '' };
+  try {
+    const url = new URL(sourceUrl);
+    const host = url.hostname.replace(/^www\./, '').replace(/^m\./, '').replace(/^music\./, '');
+    const parts = url.pathname.split('/').filter(Boolean);
+    const isSpotify = host.endsWith('spotify.com');
+    const isYoutube = host === 'youtu.be' || host.endsWith('youtube.com') || host.endsWith('youtube-nocookie.com');
+
+    if (isSpotify) {
+      const trackIndex = parts.indexOf('track');
+      const id = trackIndex >= 0 ? parts[trackIndex + 1] : null;
+      return { isSpotify, isYoutube, idContext: id ? `\nSpotify track ID: ${id}` : '' };
+    }
+
+    if (isYoutube) {
+      const id = host === 'youtu.be'
+        ? parts[0]
+        : url.searchParams.get('v') || (
+          ['shorts', 'embed', 'live'].includes(parts[0]) ? parts[1] : null
+        );
+      return { isSpotify, isYoutube, idContext: id ? `\nYouTube video ID: ${id}` : '' };
+    }
+
+    return { isSpotify, isYoutube, idContext: '' };
+  } catch {
+    return {
+      isSpotify: sourceUrl.includes('spotify.com'),
+      isYoutube: sourceUrl.includes('youtube.com') || sourceUrl.includes('youtu.be'),
+      idContext: '',
+    };
+  }
+}
+
 export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'POST only' });
   if (!process.env.ANTHROPIC_API_KEY) return res.status(500).json({ error: 'Missing ANTHROPIC_API_KEY' });
@@ -21,18 +55,7 @@ export default async function handler(req, res) {
   const sourceUrl = payload.sourceUrl ? String(payload.sourceUrl) : null;
   if (!query && !sourceUrl) return res.status(400).json({ error: 'Missing query' });
 
-  const isSpotify = sourceUrl && sourceUrl.includes('spotify.com');
-  const isYoutube = sourceUrl && (sourceUrl.includes('youtube.com') || sourceUrl.includes('youtu.be'));
-  let idContext = '';
-  if (sourceUrl) {
-    if (isSpotify) {
-      const m = sourceUrl.match(/track\/([A-Za-z0-9]+)/);
-      if (m) idContext = `\nSpotify track ID: ${m[1]}`;
-    } else if (isYoutube) {
-      const m = sourceUrl.match(/(?:[?&]v=|youtu\.be\/)([A-Za-z0-9_-]{6,})/);
-      if (m) idContext = `\nYouTube video ID: ${m[1]}`;
-    }
-  }
+  const { isSpotify, isYoutube, idContext } = extractSourceContext(sourceUrl);
   const linkContext = sourceUrl
     ? `\n\nThe user provided this direct link: ${sourceUrl}. Identify the exact song at this URL and return its metadata.${idContext}\nThis is a direct ${isSpotify ? 'Spotify' : isYoutube ? 'YouTube' : 'streaming'} link. If the link refers to a ${isSpotify ? 'Spotify track' : isYoutube ? 'YouTube video' : 'track'} you recognise, prefer the information implied by the link (e.g. the artist's official upload) over a similarly named cover.`
     : '';
